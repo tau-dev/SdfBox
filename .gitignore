@@ -259,3 +259,6 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+/VeldridTest/Shaders/compile-hlsl - Kopie.txt
+/VeldridTest/Shaders/Fragment.hlsl.bytes
+/VeldridTest/Shaders/Fragment.metallib

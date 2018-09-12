@@ -38,12 +38,17 @@ struct Info {
 	float2 screen_size;
 };
 
-StructuredBuffer<Oct> data;
-StructuredBuffer<Info> inf;
+cbuffer A : register(b0)
+{
+	Oct data[9];
+}
+cbuffer B : register(b1)
+{
+	Info inf;
+}
 
 Oct find(float3 pos)
 {
-	Info info = inf[0];
     int i = 0;
     while (i < 9) {
         Oct c = data[i];
@@ -87,9 +92,9 @@ Oct find(float3 pos)
 }
 float3 Gradient(float3 pos)
 {
-	float3 incX = float3(pos.x + info.margin, pos.y, pos.z);
-	float3 incY = float3(pos.x, pos.y + info.margin, pos.z);
-	float3 incZ = float3(pos.x, pos.y, pos.z + info.margin);
+	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
+	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
+	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
 	float at = data[0].interpol(pos);
 	float x = data[0].interpol(incX);
 	float y = data[0].interpol(incY);
@@ -105,7 +110,7 @@ float3 ray(float4 screen)
 
 float4 FS(FragmentIn input) : SV_Target0
 {
-    float3 pos = info.position;
+    float3 pos = inf.position;
     float3 dir = ray(input.Position);
 
 	for (int i = 0; i < 100 && data[0].inside(pos); i++)
@@ -114,7 +119,7 @@ float4 FS(FragmentIn input) : SV_Target0
 
         float prox = current.interpol(pos);
         
-        if (prox <= info.margin)
+        if (prox <= inf.margin)
         {
 			float3 grad = float3(Gradient(pos));
 			float3 col = float3(abs(grad.x), abs(grad.y), abs(grad.z));

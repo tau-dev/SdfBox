@@ -76,10 +76,8 @@ namespace SDFbox
         {
             Vertices = new float[8];
             int lookup = level;
-            while (pos % 2 == 0 && lookup > 0) {
-                pos /= 2;
-                lookup--;
-            }
+            Octree.reduce(ref pos, ref level);
+
             for (int i = 0; i < 8; i++) {
                 Vertices[i] = data[level][pos + split(i)];
             }
@@ -115,6 +113,13 @@ namespace SDFbox
             }
         }
 
+        public static void reduce(ref Int3 pos, ref int level)
+        {
+            while (pos % 2 == 0 && level > 0) {
+                pos /= 2;
+                level--;
+            }
+        }
         public static Int3 split(int index)
         {
             return new Int3() {
@@ -139,24 +144,18 @@ namespace SDFbox
             }
         }
 
-        public void Add(Int3 pos, int level, float v)
+        public void Add(Int3 pos, int level, float value)
         {
-            while (pos % 2 == 0 && level > 0) {
-                pos /= 2;
-                level--;
-            }
+            Octree.reduce(ref pos, ref level);
             if(Values[level].ContainsKey(pos)) {
                 Values[level].Remove(pos);
             }
-            Values[level].Add(pos, v);
+            Values[level].Add(pos, value);
         }
         public void Add(int x, int y, int z, int level, float v)
         {
             Int3 pos = new Int3(x, y, z);
-            while (pos % 2 == 0 && level > 0) {
-                pos /= 2;
-                level--;
-            }
+            Octree.reduce(ref pos, ref level);
             if (Values[level].ContainsKey(pos)) {
                 Values[level].Remove(pos);
             }

@@ -15,8 +15,8 @@ namespace SDFbox
         static CommandList commandList;
         static DeviceBuffer vertexBuffer;
         static DeviceBuffer indexBuffer;
-        static DeviceBuffer dataSBuffer;
-        static DeviceBuffer infoSBuffer;
+        static DeviceBuffer dataUBuffer;
+        static DeviceBuffer infoUBuffer;
         static ResourceSet structuredResources;
         static ResourceLayout resourceLayout;
         static Shader vertexShader;
@@ -61,7 +61,7 @@ namespace SDFbox
             window.PumpEvents((ref SDL_Event ev) => {
                 Console.WriteLine(ev.type);
             });
-            graphicsDevice.UpdateBuffer(infoSBuffer, 0, Logic.GetInfo);
+            graphicsDevice.UpdateBuffer(infoUBuffer, 0, Logic.GetInfo);
             commandList.Begin();
 
             commandList.SetFramebuffer(graphicsDevice.SwapchainFramebuffer);
@@ -104,23 +104,14 @@ namespace SDFbox
 
             Console.WriteLine(Marshal.SizeOf(octData[0]));
 
-            dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
-            infoSBuffer = MakeBuffer(Logic.GetInfo, BufferUsage.StructuredBufferReadOnly);
-            resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
-                new ResourceLayoutElementDescription("SB0", ResourceKind.StructuredBufferReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("SB1", ResourceKind.StructuredBufferReadOnly, ShaderStages.Fragment)
-            }));
-            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, dataSBuffer, infoSBuffer));
-
-            /* ===
-            dataUBuffer = MakeBuffer(octData, BufferUsage.UniformBuffer);//octData, BufferUsage.UniformBuffer);
+            dataUBuffer = MakeBuffer(octData, BufferUsage.UniformBuffer);
             infoUBuffer = MakeBuffer(Logic.GetInfo, BufferUsage.UniformBuffer);
-            resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription( new ResourceLayoutElementDescription[] {
+            resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
                 new ResourceLayoutElementDescription("UB0", ResourceKind.UniformBuffer, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("UB1", ResourceKind.UniformBuffer, ShaderStages.Fragment)
             }));
-            uniformResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, dataUBuffer, infoUBuffer));
-            // === */
+            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, dataUBuffer, infoUBuffer));
+            
 
             vertexShader = LoadShader(ShaderStages.Vertex);
             fragmentShader = LoadShader(ShaderStages.Fragment);
@@ -133,14 +124,10 @@ namespace SDFbox
         static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0) where T : struct
         {
             BufferDescription description;
-            uint structuredStride = 0;
-            if (usage == BufferUsage.StructuredBufferReadOnly || usage == BufferUsage.StructuredBufferReadWrite) {
-                structuredStride = Size();
-            }
             if (size == 0) {
-                description = new BufferDescription(Size(), usage, structuredStride);
+                description = new BufferDescription(Size(), usage);
             } else {
-                description = new BufferDescription(size, usage, structuredStride);
+                description = new BufferDescription(size, usage);
             }
             DeviceBuffer newBuffer = factory.CreateBuffer(description);
             graphicsDevice.UpdateBuffer(newBuffer, 0, data);

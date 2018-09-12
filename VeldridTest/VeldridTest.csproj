@@ -207,7 +207,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="Shaders\Fragment.hlsl.bytes">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Shaders\Fragment.metal">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
