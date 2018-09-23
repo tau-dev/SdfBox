@@ -31,6 +31,20 @@ namespace SDFbox
             }
         }
 
+        public static SaveModel Build()
+        {
+            bool[] structure = new bool[] { true, false, false, false, false, false, false, false, false };
+            SaveModel b = new SaveModel(structure, 2);
+
+            for (int i = 0; i < 27; i++) {
+                int X = i % 3;
+                int Y = i / 3 % 3;
+                int Z = i / 9 % 3;
+                b.Add(X, Y, Z, 1, (float)i / 27.0f);
+            }
+            return b;
+        }
+
         public OctS[] Cast()
         {
             return Tree.Cast();

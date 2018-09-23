@@ -104,7 +104,7 @@ float3 Gradient(float3 pos)
 
 float3 ray(float4 screen)
 {
-	return normalize(mul(float3(screen.x / info.screen_size.x - .5, screen.y / info.screen_size.y - .5, .5), info.heading));
+	return normalize(mul(float3(screen.x / inf.screen_size.x - .5, screen.y / inf.screen_size.y - .5, .5), inf.heading));
 }
 
 
@@ -112,12 +112,12 @@ float4 FS(FragmentIn input) : SV_Target0
 {
     float3 pos = inf.position;
     float3 dir = ray(input.Position);
+	float prox = 1;
 
-	for (int i = 0; i < 100 && data[0].inside(pos); i++)
+	for (int i = 0; i < 200 && data[0].inside(pos) && abs(prox) > inf.margin; i++)
     {
 		Oct current = find(pos);//data[0];//find(pos);
-
-        float prox = current.interpol(pos);
+        prox = current.interpol(pos);
         
         if (prox <= inf.margin)
         {
@@ -126,7 +126,7 @@ float4 FS(FragmentIn input) : SV_Target0
 			return input.Color + float4(normalize(col), 0);
 			//return input.Color + float4(1, 0, 0, 1);
         }
-        pos += dir * (prox);
+        pos += dir * (prox) * (1 + inf.margin);
         //println(pos);
     }
   

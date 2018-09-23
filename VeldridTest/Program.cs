@@ -5,6 +5,7 @@ using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using System.Runtime.InteropServices;
+using System.Timers;
 
 namespace SDFbox
 {
@@ -23,6 +24,7 @@ namespace SDFbox
         static Shader fragmentShader;
         static Pipeline pipeline;
         static ResourceFactory factory;
+        static int frame = 0;
 
         static void Main(string[] args)
         {
@@ -47,10 +49,19 @@ namespace SDFbox
 
             CreateResources();
 
+            Timer secondTimer = new Timer(1000);
+            secondTimer.Elapsed += FPS;
+            secondTimer.AutoReset = true;
+            secondTimer.Enabled = true;
+
             while (window.Exists) {
                 window.PumpEvents();
                 Draw();
+                frame++;
             }
+
+            secondTimer.Stop();
+            secondTimer.Dispose();
 
             DisposeResources();
         }
@@ -234,6 +245,13 @@ namespace SDFbox
             graphicsDevice.Dispose();
         }
 
+        static void FPS(Object source, ElapsedEventArgs e)
+        {
+            Console.Clear();
+            Console.WriteLine(1000 / frame + " mspf");
+            frame = 0;
+        }
+        
 
         public static Vector2 ScreenSize {
             get {
