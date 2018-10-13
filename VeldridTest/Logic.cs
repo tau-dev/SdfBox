@@ -17,7 +17,7 @@ namespace SDFbox
         const float tSpeed = 0.02f;
 
         static Vector2 heading = new Vector2(0, 0);
-        static Vector3 position = new Vector3(0.4f, 0.4f, 0.1f);
+        static Vector3 position = new Vector3(0.5f, 0.5f, 0.1f);
         private static Matrix4x4 headingMat {
             get {
                 Matrix4x4 yaw = Matrix4x4.CreateRotationY(heading.Y);
@@ -41,9 +41,9 @@ namespace SDFbox
 
         public static OctS[] MakeData()
         {
-            Model model = new Model(tempMake());
+            Model model = new Model(Model.Build());//(Model.Build());//(tempMake());
             OctS[] data = new OctS[9];
-            data[0] = model.Cast()[0];
+            data = model.Cast();
             return data;
 
             SaveModel tempMake()
@@ -134,7 +134,7 @@ namespace SDFbox
         {
             this.heading = heading;
             this.position = position;
-            margin = 0.0001f;
+            margin = 0.001f;
             screen = Program.ScreenSize;
         }
     }

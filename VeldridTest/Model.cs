@@ -15,8 +15,8 @@ namespace SDFbox
         {
             save = model;
             Tree = construct(new Queue<bool>(save.Hierachy));
-            Tree.Init(save.Values, new Int3(0, 0, 0), 0);
-
+            Tree.Init(save, new Int3(0, 0, 0), 0);
+            
             Octree construct(Queue<bool> hierachy)
             {
                 if(hierachy.Dequeue() == false) {
@@ -33,16 +33,23 @@ namespace SDFbox
 
         public static SaveModel Build()
         {
-            bool[] structure = new bool[] { true, false, false, false, false, false, false, false, false };
-            SaveModel b = new SaveModel(structure, 2);
+            //bool[] structure = new bool[] { true, false, false, false, false, false, false, false, false };
+            bool[] structure = new bool[] { true, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false };
+            SaveModel b = new SaveModel(structure, 1);
 
-            for (int i = 0; i < 27; i++) {
-                int X = i % 3;
-                int Y = i / 3 % 3;
-                int Z = i / 9 % 3;
-                b.Add(X, Y, Z, 1, (float)i / 27.0f);
+            for (int i = 0; i < 125; i++) {
+                int X = i % 5;
+                int Y = i / 5 % 5;
+                int Z = i / 25 % 5;
+                b.Add(X, Y, Z, 1, SDFunction(new Vector3(X/4f, Y/4f, Z/4f)));
             }
             return b;
+
+            float SDFunction(Vector3 pos)
+            {
+                Vector3 centre = new Vector3(.5f, .5f, 1f);
+                return (centre - pos).Length() - .32f;
+            }
         }
 
         public OctS[] Cast()
@@ -86,14 +93,12 @@ namespace SDFbox
             }
         }
         
-        internal void Init(Dictionary<Int3, float>[] data, Int3 pos, int level)
+        internal void Init(SaveModel data, Int3 pos, int level)
         {
             Vertices = new float[8];
-            int lookup = level;
-            Octree.reduce(ref pos, ref level);
 
             for (int i = 0; i < 8; i++) {
-                Vertices[i] = data[level][pos + split(i)];
+                Vertices[i] = data.Values[(pos + split(i))*data.ScaleLevel(level)];
             }
 
             if (Children != null) {
@@ -147,33 +152,43 @@ namespace SDFbox
     class SaveModel
     {
         public bool[] Hierachy { get; }
-        public Dictionary<Int3, float>[] Values { get; }
+        public int Depth { get; } // 0-indexed depth of the Hierachy
+        public Dictionary<Int3, float> Values { get; }
 
         public SaveModel(bool[] hierachy, int depth)
         {
             Hierachy = hierachy;
-            Values = new Dictionary<Int3, float>[depth];
-            for (int i = 0; i < depth; i++) {
-                Values[i] = new Dictionary<Int3, float>();
-            }
+            Depth = depth;
+            Values = new Dictionary<Int3, float>();
         }
 
         public void Add(Int3 pos, int level, float value)
         {
-            Octree.reduce(ref pos, ref level);
-            if(Values[level].ContainsKey(pos)) {
-                Values[level].Remove(pos);
+            pos *= ScaleLevel(level);
+
+            if (Values.ContainsKey(pos)) {
+                Values.Remove(pos);
             }
-            Values[level].Add(pos, value);
+            Values.Add(pos, value);
         }
         public void Add(int x, int y, int z, int level, float v)
         {
             Int3 pos = new Int3(x, y, z);
-            Octree.reduce(ref pos, ref level);
-            if (Values[level].ContainsKey(pos)) {
-                Values[level].Remove(pos);
+            pos *= ScaleLevel(level);
+
+            if (Values.ContainsKey(pos)) {
+                Values.Remove(pos);
             }
-            Values[level].Add(pos, v);
+            Values.Add(pos, v);
+        }
+
+        public int ScaleLevel(int level)
+        {
+            int s = 1;
+            for (int i = 0; i < Depth - level; i++) {
+                s *= 2;
+            }
+            return s;
         }
     }
 

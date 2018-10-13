@@ -1,11 +1,30 @@
-﻿using System;
+﻿#region TODO
+/*
+ * Converting .obj
+        For all oct-vertices not in done-list
+            Find closest model-vertex
+            Sign distance depending on associated normals
+            Add oct-vertices to done-list
+            If max depth not reached
+                Subdivide
+                If child node values are within error tolerances
+                    remove subdivision
+ * Pruning
+        Undivide (turn into leaves) all branches with smallest(absolute distance) > 2*sidelength
+ * Use Compute shader
+        Figure out storing & display of image
+        Figure out data transfers
+ * 
+ */
+#endregion
+
+using System;
 using System.IO;
 using System.Numerics;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using System.Runtime.InteropServices;
-using System.Timers;
 
 namespace SDFbox
 {
@@ -24,18 +43,11 @@ namespace SDFbox
         static Shader fragmentShader;
         static Pipeline pipeline;
         static ResourceFactory factory;
-        static int frame = 0;
 
         static void Main(string[] args)
         {
-            WindowCreateInfo windowCI = new WindowCreateInfo() {
-                X = 100,
-                Y = 100,
-                WindowWidth = 720,
-                WindowHeight = 720,
-                WindowTitle = "Veldrid Tutorial",
-            };
-            window = VeldridStartup.CreateWindow(ref windowCI);
+            window = Utilities.MakeWindow(720, 720);
+
             window.KeyDown += Logic.KeyHandler;
             window.MouseMove += (MouseMoveEventArgs mouseEvent) => {
                 if (mouseEvent.State.IsButtonDown(0)) {
@@ -43,26 +55,18 @@ namespace SDFbox
                     Logic.MouseMove(mouseEvent.MousePosition - new Vector2(360, 360));
                 }
             };
-            window.CursorVisible = false;
 
             graphicsDevice = VeldridStartup.CreateGraphicsDevice(window);
 
             CreateResources();
 
-            Timer secondTimer = new Timer(1000);
-            secondTimer.Elapsed += FPS;
-            secondTimer.AutoReset = true;
-            secondTimer.Enabled = true;
+            FPS fpsCounter = new FPS();
 
             while (window.Exists) {
                 window.PumpEvents();
                 Draw();
-                frame++;
+                fpsCounter.Frame();
             }
-
-            secondTimer.Stop();
-            secondTimer.Dispose();
-
             DisposeResources();
         }
 
@@ -99,8 +103,6 @@ namespace SDFbox
         }
 
 
-
-
         static void CreateResources()
         {
             factory = graphicsDevice.ResourceFactory;
@@ -131,7 +133,6 @@ namespace SDFbox
 
             commandList = factory.CreateCommandList();
         }
-
         static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0) where T : struct
         {
             BufferDescription description;
@@ -151,87 +152,57 @@ namespace SDFbox
                 return (uint) (data.Length * singleSize);
             }
         }
-
         static Shader LoadShader(ShaderStages stage)
         {
             string extension = GraphicsExtension();
             Console.WriteLine(extension);
-            string entryPoint = (stage == ShaderStages.Vertex ? "VS" : "FS");
+            string entryPoint = "";
+            switch (stage) {
+                case ShaderStages.Vertex:
+                    entryPoint = "VS";
+                    break;
+                case ShaderStages.Fragment:
+                    entryPoint = "FS";
+                    break;
+                case ShaderStages.Compute:
+                    entryPoint = "CS";
+                    break;
+            }
             string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{stage.ToString()}.{extension}");
             byte[] shaderBytes = File.ReadAllBytes(path);
             return graphicsDevice.ResourceFactory.CreateShader(new ShaderDescription(stage, shaderBytes, entryPoint));
-        }
 
-        static string GraphicsExtension()
-        {
-            switch (graphicsDevice.BackendType) {
-                case GraphicsBackend.Direct3D11:
-                    return ("hlsl.bytes");
-                case GraphicsBackend.Vulkan:
-                    return ("spv");
-                case GraphicsBackend.OpenGL:
-                    return ("glsl");
-                case GraphicsBackend.Metal:
-                    return ("metallib");
-                default: throw new InvalidOperationException();
+            string GraphicsExtension()
+            {
+                switch (graphicsDevice.BackendType) {
+                    case GraphicsBackend.Direct3D11:
+                        return ("hlsl.bytes");
+                    case GraphicsBackend.Vulkan:
+                        return ("spv");
+                    case GraphicsBackend.OpenGL:
+                        return ("glsl");
+                    case GraphicsBackend.Metal:
+                        return ("metallib");
+                    default: throw new InvalidOperationException();
+                }
             }
         }
-
-
-
+        
         static void MakePipeline()
         {
             GraphicsPipelineDescription pipelineDescription = new GraphicsPipelineDescription {
                 BlendState = BlendStateDescription.SingleOverrideBlend
             };
 
-            SetStencilState(pipelineDescription);
-            SetRasterizerState(pipelineDescription);
+            Utilities.SetStencilState(pipelineDescription);
+            Utilities.SetRasterizerState(pipelineDescription);
 
             pipelineDescription.PrimitiveTopology = PrimitiveTopology.TriangleStrip;
             pipelineDescription.ResourceLayouts = new ResourceLayout[] { resourceLayout };
-            pipelineDescription.ShaderSet = MakeShaderSet(LayoutDescription(), vertexShader, fragmentShader);
+            pipelineDescription.ShaderSet = Utilities.MakeShaderSet(vertexShader, fragmentShader);
             pipelineDescription.Outputs = graphicsDevice.SwapchainFramebuffer.OutputDescription;
 
             pipeline = factory.CreateGraphicsPipeline(pipelineDescription);
-        }
-
-        static VertexLayoutDescription LayoutDescription()
-        {
-            return (new VertexLayoutDescription(
-            new VertexElementDescription("Position", VertexElementSemantic.Position, VertexElementFormat.Float2),
-            new VertexElementDescription("Color", VertexElementSemantic.Color, VertexElementFormat.Float4)));
-        }
-
-        static void SetStencilState(GraphicsPipelineDescription pipelineDescription,
-            bool depthTest = true, bool depthWrite = true,
-            ComparisonKind comparison = ComparisonKind.LessEqual)
-        {
-            pipelineDescription.DepthStencilState = new DepthStencilStateDescription(
-                depthTestEnabled: depthTest,
-                depthWriteEnabled: depthWrite,
-                comparisonKind: comparison);
-        }
-
-        static void SetRasterizerState(GraphicsPipelineDescription pipelineDescription,
-            FaceCullMode faceCull = FaceCullMode.Back,
-            PolygonFillMode polygonFill = PolygonFillMode.Solid,
-            FrontFace front = FrontFace.Clockwise,
-            bool depthClip = true, bool scissorTest = false)
-        {
-            pipelineDescription.RasterizerState = new RasterizerStateDescription(
-                cullMode: faceCull,
-                fillMode: polygonFill,
-                frontFace: front,
-                depthClipEnabled: depthClip,
-                scissorTestEnabled: scissorTest);
-        }
-
-        static ShaderSetDescription MakeShaderSet(VertexLayoutDescription vertexLayout, Shader vertexShader, Shader fragmentShader)
-        {
-            return (new ShaderSetDescription(
-                new VertexLayoutDescription[] { vertexLayout },
-                new Shader[] { vertexShader, fragmentShader }));
         }
         
         static void DisposeResources()
@@ -244,14 +215,6 @@ namespace SDFbox
             indexBuffer.Dispose();
             graphicsDevice.Dispose();
         }
-
-        static void FPS(Object source, ElapsedEventArgs e)
-        {
-            Console.Clear();
-            Console.WriteLine(1000 / frame + " mspf");
-            frame = 0;
-        }
-        
 
         public static Vector2 ScreenSize {
             get {
@@ -277,17 +240,16 @@ namespace SDFbox
     }
 
     ///*
-    [StructLayout(LayoutKind.Sequential, Pack = 128, Size = 128)]
+    [StructLayout(LayoutKind.Sequential, Pack = 16)]
     struct OctS
     {
         public Int32 Parent;
         public Vector3 lower;
         public Vector3 higher;
-        public float b;
+        public Int32 empty;
 
         public Int8 children;
         public Vector8 verts;
-        public Int32 empty;
         //*/
         /*
         public OctS(int Parent, Int8 children, Vector8 verts, Vector3 lower, Vector3 higher) {
@@ -319,8 +281,6 @@ namespace SDFbox
                 if (x <= 0)
                     empty = 0;
             }
-
-            b = 0;
         }
     }
 
