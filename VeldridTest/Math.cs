@@ -19,7 +19,7 @@ namespace SDFbox {
         }
         public static float Lerp(float a, float b, float p)
         {
-            return (a + b * p) / 2;
+            return a * (1 - p) + b * p;
         }
     }
 }

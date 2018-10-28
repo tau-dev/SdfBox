@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Converter;
 
 namespace SDFbox
 {
@@ -28,6 +29,36 @@ namespace SDFbox
                     }
                     return new Octree(children);
                 }
+            }
+        }
+        public Model(VertexModel vmodel)
+        {
+            Tree = construct(vmodel, 1, Vector3.Zero);
+
+            Octree construct(VertexModel vm, float scale, Vector3 pos)
+            {
+                float[] verts = new float[8];
+                for (int i = 0; i < 8; i++) {
+                    verts[i] = vm.DistanceAt(pos + Octree.split(i).Vector * scale);
+                }
+                Octree build = new Octree(verts);
+                
+                
+                if (error(vm, build.Vertices, scale, pos) > 0.05) {
+                    Console.WriteLine(error(vm, build.Vertices, scale, pos));
+                    Octree[] children = new Octree[8];
+                    for (int i = 0; i < 8; i++) {
+                        children[i] = construct(vm, scale / 2, pos + Octree.split(i).Vector * scale / 2);
+                    }
+                    build.Children = children;
+                }
+
+                return build;
+            }
+            float error(VertexModel vm, float[] values, float scale, Vector3 pos)
+            {
+                Vector3 test = Vector3.One / 2;
+                return System.Math.Abs(vm.DistanceAt(pos + test * scale) - Math.Lerp3(new Vector8(values), test));
             }
         }
 
@@ -61,7 +92,7 @@ namespace SDFbox
     class Octree
     {
         Octree parent;
-        public Octree[] Children { get; }
+        public Octree[] Children;
         public float[] Vertices;
 
         public Octree() { }
@@ -131,7 +162,6 @@ namespace SDFbox
                 octs[mypos] = new OctS(parent, childindices, Vertices, pos, pos + Vector3.One * scale);
             }
         }
-
         public static void reduce(ref Int3 pos, ref int level)
         {
             while (pos % 2 == 0 && level > 0) {

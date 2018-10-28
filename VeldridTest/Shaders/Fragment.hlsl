@@ -24,7 +24,7 @@ struct Oct
 	}
 	float interpol(float3 pos)
 	{
-		float3 d = (pos - lower) / (higher - lower);
+		float3 d = (pos - lower) * (higher - lower);
 		float cOO = lerp(vertsL.x, vertsL.y, d.x);
 		float cOI = lerp(vertsL.z, vertsL.w, d.x);
 		float cIO = lerp(vertsH.x, vertsH.y, d.x);
@@ -120,7 +120,6 @@ float4 FS(FragmentIn input) : SV_Target0
     float3 pos = inf.position;
     float3 dir = ray(input.Position);
 	float prox = 1;
-
 
 	for (int i = 0; i < 100 && data[0].inside(pos) && abs(prox) > inf.margin; i++)
     {

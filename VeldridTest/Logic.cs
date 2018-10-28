@@ -41,7 +41,7 @@ namespace SDFbox
 
         public static OctS[] MakeData()
         {
-            Model model = new Model(Model.Build());//(Model.Build());//(tempMake());
+            Model model = new Model(Model.Build());//new Model(new Converter.VertexModel("model.obj"));//new Model(Model.Build());//(Model.Build());//(tempMake());
             OctS[] data = new OctS[9];
             data = model.Cast();
             return data;

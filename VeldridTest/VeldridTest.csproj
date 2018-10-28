@@ -204,6 +204,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <None Include="model.obj">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="packages.config" />
     <None Include="Shaders\compile-hlsl.cmd" />
     <None Include="Shaders\compile-spirv.cmd" />
@@ -272,6 +275,10 @@
     <ProjectReference Include="..\..\..\..\Downloads\veldrid-master\src\Veldrid\Veldrid.csproj">
       <Project>{60d56e4a-fa7a-4664-bef0-0a29f41518bf}</Project>
       <Name>Veldrid</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\Converter\Converter.csproj">
+      <Project>{27f45aed-91fa-4034-b9d4-dd4b51866c45}</Project>
+      <Name>Converter</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

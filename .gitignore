@@ -263,3 +263,5 @@ __pycache__/
 /VeldridTest/Shaders/Fragment.hlsl.bytes
 /VeldridTest/Shaders/Fragment.metallib
 /UnitTests
+/stanford_dragon
+/VeldridTest/model.mtl
