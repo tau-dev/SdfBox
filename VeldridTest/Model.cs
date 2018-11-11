@@ -2,16 +2,25 @@
 using System.Collections.Generic;
 using System.Numerics;
 using Converter;
+using System.Threading.Tasks;
+using System.Runtime.Serialization;
 
 namespace SDFbox
 {
     class Model
     {
-        Octree Tree;
+        public Octree Tree { get; }
         public Vector3 Position;
         Matrix4x4 Rotation;
         SaveModel save;
+        const float HalfSqrt3 = 0.866025f;
+        const float precision = 0.002f;
+        const float maxResolution = 0.02f;
 
+        public Model(Octree c)
+        {
+            Tree = c;
+        }
         public Model(SaveModel model)
         {
             save = model;
@@ -33,32 +42,33 @@ namespace SDFbox
         }
         public Model(VertexModel vmodel)
         {
-            Tree = construct(vmodel, 1, Vector3.Zero);
+            Tree = construct(vmodel, 1, Vector3.Zero, HalfSqrt3*2);
 
-            Octree construct(VertexModel vm, float scale, Vector3 pos)
+            Octree construct(VertexModel vm, float scale, Vector3 pos, float guess)
             {
                 float[] verts = new float[8];
-                for (int i = 0; i < 8; i++) {
-                    verts[i] = vm.DistanceAt(pos + Octree.split(i).Vector * scale);
-                }
+                float center = vm.DistanceAt(pos + Vector3.One * 0.5f * scale, guess + HalfSqrt3*scale);
+                Parallel.For(0, 8, (i) => {
+                    verts[i] = vm.DistanceAt(pos + Octree.split(i).Vector * scale, System.Math.Abs(center) + HalfSqrt3 * scale);
+                });
                 Octree build = new Octree(verts);
                 
                 
-                if (error(vm, build.Vertices, scale, pos) > 0.05) {
-                    Console.WriteLine(error(vm, build.Vertices, scale, pos));
+                if (error(center, build.Vertices, scale, pos) > precision && scale > maxResolution) {
+                    Console.WriteLine(error(center, build.Vertices, scale, pos));
                     Octree[] children = new Octree[8];
                     for (int i = 0; i < 8; i++) {
-                        children[i] = construct(vm, scale / 2, pos + Octree.split(i).Vector * scale / 2);
+                        children[i] = construct(vm, scale / 2, pos + Octree.split(i).Vector * scale / 2, System.Math.Abs(center));
                     }
                     build.Children = children;
                 }
 
                 return build;
             }
-            float error(VertexModel vm, float[] values, float scale, Vector3 pos)
+            float error(float center, float[] values, float scale, Vector3 pos)
             {
                 Vector3 test = Vector3.One / 2;
-                return System.Math.Abs(vm.DistanceAt(pos + test * scale) - Math.Lerp3(new Vector8(values), test));
+                return System.Math.Abs(center - Math.Lerp3(new Vector8(values), test));
             }
         }
 
@@ -89,6 +99,7 @@ namespace SDFbox
         }
     }
 
+    [Serializable]
     class Octree
     {
         Octree parent;

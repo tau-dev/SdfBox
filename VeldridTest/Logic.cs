@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Veldrid;
-using Veldrid.Sdl2;
+using System.IO;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace SDFbox
 {
@@ -15,6 +16,7 @@ namespace SDFbox
 
         const float mSpeed = 0.04f;
         const float tSpeed = 0.02f;
+        static int dataSize = 0;
 
         static Vector2 heading = new Vector2(0, 0);
         static Vector3 position = new Vector3(0.5f, 0.5f, 0.1f);
@@ -35,15 +37,29 @@ namespace SDFbox
         public static Info[] GetInfo
         {
             get {
-                return new Info[] { new Info(new Float3x3(headingMat), position) };
+                return new Info[] { new Info(new Float3x3(headingMat), position, dataSize) };
             }
         }
 
-        public static OctS[] MakeData()
+        public static OctS[] MakeData(string filename)
         {
-            Model model = new Model(Model.Build());//new Model(new Converter.VertexModel("model.obj"));//new Model(Model.Build());//(Model.Build());//(tempMake());
-            OctS[] data = new OctS[9];
-            data = model.Cast();
+            Model model;
+            BinaryFormatter readerWriter = new BinaryFormatter();
+            try {
+
+                using (FileStream fs = File.Open(filename + ".asdf", FileMode.Open)) {
+                    Octree c = (Octree) readerWriter.Deserialize(fs);
+                    model = new Model(c);
+                }
+            } catch (FileNotFoundException e) {
+                model = new Model(new Converter.VertexModel(filename + ".obj"));//new Model(new Converter.VertexModel("model.obj"));//new Model(Model.Build());//(tempMake());
+                using (FileStream fs = File.Create(filename + ".asdf")) {
+                    readerWriter.Serialize(fs, model.Tree);
+                }
+            }
+            
+            OctS[] data = model.Cast();
+            dataSize = data.Length;
             return data;
 
             SaveModel tempMake()
@@ -128,14 +144,25 @@ namespace SDFbox
         Float3x3 heading;
         Vector3 position;
         float margin;
-        Vector2 screen;
+        Vector2 screen_size;
+        int buffer_size;
+        float limit;
 
-        public Info(Float3x3 heading, Vector3 position)
+        public Info(Float3x3 heading, Vector3 position, int dataSize)
         {
             this.heading = heading;
             this.position = position;
             margin = 0.001f;
-            screen = Program.ScreenSize;
+            screen_size = Program.ScreenSize;
+            buffer_size = dataSize;
+
+            float furthest = 0;
+            for (int i = 0; i < 8; i++) {
+                float distance = (Octree.split(i).Vector - position).Length();
+                if (distance > furthest)
+                    furthest = distance;
+            }
+            limit = furthest + furthest;
         }
     }
 
@@ -155,6 +182,7 @@ namespace SDFbox
         public float m31;
         public float m32;
         public float m33;
+        public float x3;
 
         public Float3x3(Matrix4x4 x)
         {
@@ -172,6 +200,7 @@ namespace SDFbox
 
             x1 = 0;
             x2 = 0;
+            x3 = 0;
         }
 
     }

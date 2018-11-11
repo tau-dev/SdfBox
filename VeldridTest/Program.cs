@@ -35,7 +35,7 @@ namespace SDFbox
         static CommandList commandList;
         static DeviceBuffer vertexBuffer;
         static DeviceBuffer indexBuffer;
-        static DeviceBuffer dataUBuffer;
+        static DeviceBuffer dataSBuffer;
         static DeviceBuffer infoUBuffer;
         static ResourceSet structuredResources;
         static ResourceLayout resourceLayout;
@@ -110,20 +110,20 @@ namespace SDFbox
             ushort[] quadIndices = { 0, 1, 2, 3 };
 
 
-            OctS[] octData = Logic.MakeData();
+            OctS[] octData = Logic.MakeData("model");
 
             vertexBuffer = MakeBuffer(quadVertices, BufferUsage.VertexBuffer);
             indexBuffer = MakeBuffer(quadIndices, BufferUsage.IndexBuffer);
 
             Console.WriteLine(Marshal.SizeOf(octData[0]));
 
-            dataUBuffer = MakeBuffer(octData, BufferUsage.UniformBuffer);
+            dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
             infoUBuffer = MakeBuffer(Logic.GetInfo, BufferUsage.UniformBuffer);
             resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
-                new ResourceLayoutElementDescription("UB0", ResourceKind.UniformBuffer, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SB0", ResourceKind.StructuredBufferReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("UB1", ResourceKind.UniformBuffer, ShaderStages.Fragment)
             }));
-            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, dataUBuffer, infoUBuffer));
+            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, dataSBuffer, infoUBuffer));
             
 
             vertexShader = LoadShader(ShaderStages.Vertex);
@@ -136,21 +136,19 @@ namespace SDFbox
         static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0) where T : struct
         {
             BufferDescription description;
-            if (size == 0) {
-                description = new BufferDescription(Size(), usage);
-            } else {
-                description = new BufferDescription(size, usage);
-            }
+            uint structuredStride = 0;
+            uint singleSize = (uint) Marshal.SizeOf(data[0]);
+
+            if (usage == BufferUsage.StructuredBufferReadOnly || usage == BufferUsage.StructuredBufferReadWrite)
+                structuredStride = singleSize;
+            if (size == 0)
+                size = (uint) data.Length * singleSize;
+
+            description = new BufferDescription(size, usage, structuredStride);
             DeviceBuffer newBuffer = factory.CreateBuffer(description);
+
             graphicsDevice.UpdateBuffer(newBuffer, 0, data);
             return newBuffer;
-
-            uint Size()
-            {
-                Console.WriteLine(data.Length);
-                int singleSize = Marshal.SizeOf(data[0]);
-                return (uint) (data.Length * singleSize);
-            }
         }
         static Shader LoadShader(ShaderStages stage)
         {

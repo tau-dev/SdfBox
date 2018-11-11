@@ -1,6 +1,4 @@
 
-#define OctCount 73
-
 struct FragmentIn
 {
     float4 Position : SV_Position;
@@ -24,7 +22,7 @@ struct Oct
 	}
 	float interpol(float3 pos)
 	{
-		float3 d = (pos - lower) * (higher - lower);
+		float3 d = (pos - lower) / (higher - lower);
 		float cOO = lerp(vertsL.x, vertsL.y, d.x);
 		float cOI = lerp(vertsL.z, vertsL.w, d.x);
 		float cIO = lerp(vertsH.x, vertsH.y, d.x);
@@ -40,13 +38,19 @@ struct Info {
 	float3 position;
 	float margin;
 	float2 screen_size;
+	uint buffer_size;
+	float limit;
+	float3 light;
 };
 
+StructuredBuffer<Oct> data : register(t0);
+/*
 cbuffer A : register(b0)
 {
 	Oct data[OctCount];
 }
-cbuffer B : register(b1)
+*/
+cbuffer B : register(b0)
 {
 	Info inf;
 }
@@ -55,7 +59,7 @@ Oct find(float3 pos)
 {
     int index = 0;
 	int iterations = 0;
-    while (index < OctCount && iterations < 12) {
+    while (index < inf.buffer_size && iterations < 12) {
         Oct c = data[index];
         
         if (c.childrenL.x < 0) {
@@ -114,16 +118,16 @@ float3 ray(float4 screen)
 	return normalize(mul(float3(screen.x / inf.screen_size.x - .5, screen.y / inf.screen_size.y - .5, .5), inf.heading));
 }
 
-
+Oct currennt;
 float4 FS(FragmentIn input) : SV_Target0
 {
-    float3 pos = inf.position;
+	float3 pos = inf.position;
     float3 dir = ray(input.Position);
 	float prox = 1;
 
-	for (int i = 0; i < 100 && data[0].inside(pos) && abs(prox) > inf.margin; i++)
+	for (int i = 0; i < 100 && pos.x*pos.x+pos.y*pos.y+pos.z*pos.z < inf.limit && abs(prox) > inf.margin; i++)
     {
-		Oct current = find(pos);//data[0];//find(pos);
+		current = find(pos);//data[0];//find(pos);
         prox = current.interpol(pos);
 		//return float4(0, prox, 0, .5);
         
@@ -131,11 +135,13 @@ float4 FS(FragmentIn input) : SV_Target0
         {
 			//return float4(1, 0, 0, .5);
 			float3 grad = float3(Gradient(pos));
-			float3 col = float3(abs(grad.x), abs(grad.y), abs(grad.z));
-			return input.Color + float4(normalize(col), 0);
+			//float3 col = normalize(float3(abs(grad.x), abs(grad.y), abs(grad.z)));
+			float grey = 1 - length(normalize(grad) - float3(0, 0, 1)) / 2;
+			float3 col = float3(grey, grey, grey);
+			return input.Color + float4(col, 0);
         }
 		//return float4(0, 0, 1, .5);
-        pos += dir * (prox) * (1 + inf.margin);
+        pos += dir * prox * (1 + inf.margin);
     }
   
     return input.Color + float4(0.1, 0.2, 0.4, 1);
