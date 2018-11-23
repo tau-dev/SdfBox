@@ -1,5 +1,4 @@
-﻿
-struct Oct
+﻿struct Oct
 {
 	int Parent;
 	float3 lower;
@@ -95,7 +94,7 @@ Oct find(float3 pos)
 	}
 	return data[0];
 }
-float3 Gradient(float3 pos)
+float3 gradient(float3 pos)
 {
 	Oct frame = find(pos);
 	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);

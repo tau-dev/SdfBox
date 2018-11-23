@@ -1,14 +1,5 @@
 ﻿#region TODO
 /*
- * Converting .obj
-        For all oct-vertices not in done-list
-            Find closest model-vertex
-            Sign distance depending on associated normals
-            Add oct-vertices to done-list
-            If max depth not reached
-                Subdivide
-                If child node values are within error tolerances
-                    remove subdivision
  * Pruning
         Undivide (turn into leaves) all branches with smallest(absolute distance) > 2*sidelength
  * Use Compute shader
@@ -35,12 +26,19 @@ namespace SDFbox
         static CommandList commandList;
         static DeviceBuffer vertexBuffer;
         static DeviceBuffer indexBuffer;
+
         static DeviceBuffer dataSBuffer;
         static DeviceBuffer infoUBuffer;
+        static TextureView resultTBuffer;
+        static ResourceSet computeResources;
         static ResourceSet structuredResources;
+        static ResourceLayout computeResourceLayout;
         static ResourceLayout resourceLayout;
         static Shader vertexShader;
         static Shader fragmentShader;
+        static Shader computeShader;
+        static Texture renderTexture;
+        static Pipeline computePipeline;
         static Pipeline pipeline;
         static ResourceFactory factory;
 
@@ -76,14 +74,24 @@ namespace SDFbox
             window.PumpEvents((ref SDL_Event ev) => {
                 Console.WriteLine(ev.type);
             });
-            graphicsDevice.UpdateBuffer(infoUBuffer, 0, Logic.GetInfo);
-            commandList.Begin();
 
+            graphicsDevice.UpdateBuffer(infoUBuffer, 0, Logic.GetInfo);
+
+            commandList.Begin();
+            commandList.SetPipeline(computePipeline);
+            commandList.SetComputeResourceSet(0, computeResources);
+            commandList.Dispatch((uint) window.Width / 28, (uint) window.Height / 28, 1);
+            commandList.End();
+            graphicsDevice.SubmitCommands(commandList);
+            
+
+
+            commandList.Begin();
             commandList.SetFramebuffer(graphicsDevice.SwapchainFramebuffer);
             commandList.SetFullViewports();
 
             commandList.ClearColorTarget(0, RgbaFloat.Black);
-
+            
             commandList.SetPipeline(pipeline);
             commandList.SetGraphicsResourceSet(0, structuredResources);
             commandList.SetVertexBuffer(0, vertexBuffer);
@@ -96,7 +104,6 @@ namespace SDFbox
                 vertexOffset: 0);
 
             commandList.End();
-
             graphicsDevice.SubmitCommands(commandList);
             
             graphicsDevice.SwapBuffers();
@@ -117,19 +124,29 @@ namespace SDFbox
 
             Console.WriteLine(Marshal.SizeOf(octData[0]));
 
+            renderTexture = MakeTexture((uint) window.Width, (uint) window.Height);
             dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
+            resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
             infoUBuffer = MakeBuffer(Logic.GetInfo, BufferUsage.UniformBuffer);
-            resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
-                new ResourceLayoutElementDescription("SB0", ResourceKind.StructuredBufferReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("UB1", ResourceKind.UniformBuffer, ShaderStages.Fragment)
+
+            computeResourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
+                new ResourceLayoutElementDescription("SB0", ResourceKind.StructuredBufferReadOnly, ShaderStages.Compute),
+                new ResourceLayoutElementDescription("TB0", ResourceKind.TextureReadWrite, ShaderStages.Compute),
+                new ResourceLayoutElementDescription("UB0", ResourceKind.UniformBuffer, ShaderStages.Compute)
             }));
-            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, dataSBuffer, infoUBuffer));
+            resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
+                new ResourceLayoutElementDescription("TB0", ResourceKind.TextureReadOnly, ShaderStages.Fragment)
+            }));
+            computeResources = factory.CreateResourceSet(new ResourceSetDescription(computeResourceLayout, dataSBuffer, resultTBuffer, infoUBuffer));
+            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, resultTBuffer));
             
 
             vertexShader = LoadShader(ShaderStages.Vertex);
-            fragmentShader = LoadShader(ShaderStages.Fragment);
+            fragmentShader = LoadShader("DisplayFrag", ShaderStages.Fragment);
+            computeShader = LoadShader(ShaderStages.Compute);
 
             MakePipeline();
+            MakeComputePipeline();
 
             commandList = factory.CreateCommandList();
         }
@@ -150,7 +167,37 @@ namespace SDFbox
             graphicsDevice.UpdateBuffer(newBuffer, 0, data);
             return newBuffer;
         }
-        static Shader LoadShader(ShaderStages stage)
+        static DeviceBuffer MakeEmptyBuffer<T>(BufferUsage usage, uint count) where T : struct
+        {
+            BufferDescription description;
+            uint structuredStride = 0;
+            uint singleSize = (uint) Marshal.SizeOf(new T());
+            uint size = count * singleSize;
+
+            if (usage == BufferUsage.StructuredBufferReadOnly || usage == BufferUsage.StructuredBufferReadWrite)
+                structuredStride = singleSize;
+
+            description = new BufferDescription(size, usage, structuredStride);
+            DeviceBuffer newBuffer = factory.CreateBuffer(description);
+            
+            return newBuffer;
+        }
+        static Texture MakeTexture(uint x, uint y)
+        {
+            TextureDescription tDesc = new TextureDescription();
+            tDesc.Type = TextureType.Texture2D;
+            tDesc.ArrayLayers = 0;
+            tDesc.Format = PixelFormat.R32_G32_B32_A32_Float;
+            tDesc.Width = x;
+            tDesc.Height = y;
+            tDesc.Depth = 1;
+            tDesc.Usage = TextureUsage.Storage | TextureUsage.Sampled;
+            tDesc.MipLevels = 1;
+            tDesc.ArrayLayers = 1;
+            tDesc.SampleCount = TextureSampleCount.Count1;
+            return factory.CreateTexture(tDesc);
+        }
+        static Shader LoadShader(string name, ShaderStages stage)
         {
             string extension = GraphicsExtension();
             Console.WriteLine(extension);
@@ -166,7 +213,7 @@ namespace SDFbox
                     entryPoint = "CS";
                     break;
             }
-            string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{stage.ToString()}.{extension}");
+            string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
             byte[] shaderBytes = File.ReadAllBytes(path);
             return graphicsDevice.ResourceFactory.CreateShader(new ShaderDescription(stage, shaderBytes, entryPoint));
 
@@ -185,7 +232,11 @@ namespace SDFbox
                 }
             }
         }
-        
+        static Shader LoadShader(ShaderStages stage)
+        {
+            return LoadShader(stage.ToString(), stage);
+        }
+
         static void MakePipeline()
         {
             GraphicsPipelineDescription pipelineDescription = new GraphicsPipelineDescription {
@@ -202,7 +253,19 @@ namespace SDFbox
 
             pipeline = factory.CreateGraphicsPipeline(pipelineDescription);
         }
-        
+        static void MakeComputePipeline()
+        {
+            ComputePipelineDescription pipelineDescription = new ComputePipelineDescription();
+            
+            pipelineDescription.ResourceLayouts = new ResourceLayout[] { computeResourceLayout };
+            pipelineDescription.ComputeShader = computeShader;
+            pipelineDescription.ThreadGroupSizeX = 32;
+            pipelineDescription.ThreadGroupSizeY = 32;
+            pipelineDescription.ThreadGroupSizeX = 1;
+
+            computePipeline = factory.CreateComputePipeline(pipelineDescription);
+        }
+
         static void DisposeResources()
         {
             pipeline.Dispose();

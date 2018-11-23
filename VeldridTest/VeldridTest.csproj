@@ -229,6 +229,12 @@
     <None Include="packages.config" />
     <None Include="Shaders\compile-hlsl.cmd" />
     <None Include="Shaders\compile-spirv.cmd" />
+    <None Include="Shaders\Compute.hlsl.bytes">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Shaders\DisplayFrag.hlsl.bytes">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="Shaders\Fragment.450.glsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -279,8 +285,12 @@
       <Link>SDL2.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Shaders\Cast.hlsl" />
-    <Content Include="Shaders\compile-hlsl - Kopie.txt" />
+    <Content Include="Shaders\Cast.hlsli">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <None Include="Shaders\DisplayFrag.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Include="Shaders\Compute.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

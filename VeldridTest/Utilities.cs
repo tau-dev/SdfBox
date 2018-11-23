@@ -11,8 +11,8 @@ namespace SDFbox
         public static Sdl2Window MakeWindow(int width, int height)
         {
             WindowCreateInfo windowCI = new WindowCreateInfo() {
-                X = 100,
-                Y = 100,
+                X = 128,
+                Y = 32,
                 WindowWidth = width,
                 WindowHeight = height,
                 WindowTitle = "SDFbox",

@@ -1,11 +1,11 @@
 
-#define groupSizeX 32
-#define groupSizeY 32
+#define groupSizeX 28
+#define groupSizeY 28
 #define OctCount 73
 
 struct Oct
 {
-	int Parent;
+	int parent;
 	float3 lower;
 	float3 higher;
 	int empty;
@@ -30,87 +30,99 @@ struct Oct
 	}
 };
 
-struct Info {
+struct Info
+{
 	float3x3 heading;
 	float3 position;
 	float margin;
-	uint2 absoluteDimensions;
+	float2 screen_size;
+	uint buffer_size;
+	float limit;
+	float3 light;
 };
 
 StructuredBuffer<Oct> data : register(t0);
-cbuffer B : register(b1)
+RWTexture2D<float3> tex : register(t1);
+cbuffer B : register(b0)
 {
 	Info inf;
 }
-RWStructuredBuffer<float4> BufferOut : register(u0);
 uint2 absoluteCoord(uint3 threadID, uint3 groupID)
 {
 	return threadID.xy + groupID.xy * uint2(groupSizeX, groupSizeY);
 }
 
 
-Oct find(float3 pos)
+Oct find(float3 pos, Oct c)
 {
-    int i = 0;
-    while (i < OctCount) {
-        Oct c = data[i];
-        
-        if (c.childrenL.x < 0) {
-            return c;
-        }
+	int index = 0;
+	int iterations = 0;
+	while (!c.inside(pos) && c.parent >= 0) {
+		index = c.parent;
+		c = data[index];
+	}
+	while (index < inf.buffer_size && iterations < 12) {
+		c = data[index];
 
-        float3 direction = pos - (c.lower + c.higher) / 2;
-        int p = 0;
-        if (direction.x > 0) {
-            p = 1;
-        }
-        if (direction.y > 0) {
-            p += 2;
-        }
-        if (direction.z > 0) {
-            p += 4;
+		if (c.childrenL.x < 0) {
+			return c;
+		}
+
+		float3 direction = pos - (c.lower + c.higher) / 2;
+		int p = 0;
+		if (direction.x > 0) {
+			p = 1;
+		}
+		if (direction.y > 0) {
+			p += 2;
+		}
+		if (direction.z > 0) {
+			p += 4;
 		}
 
 		switch (p) {
-			case 0:
-				i = c.childrenL.x; break;
-			case 1:
-				i = c.childrenL.y; break;
-			case 2:
-				i = c.childrenL.z; break;
-			case 3:
-				i = c.childrenL.w; break;
-			case 4:
-				i = c.childrenH.x; break;
-			case 5:
-				i = c.childrenH.y; break;
-			case 6:
-				i = c.childrenH.z; break;
-			case 7:
-				i = c.childrenH.w; break;
+		case 0:
+			index = c.childrenL.x; break;
+		case 1:
+			index = c.childrenL.y; break;
+		case 2:
+			index = c.childrenL.z; break;
+		case 3:
+			index = c.childrenL.w; break;
+		case 4:
+			index = c.childrenH.x; break;
+		case 5:
+			index = c.childrenH.y; break;
+		case 6:
+			index = c.childrenH.z; break;
+		case 7:
+			index = c.childrenH.w; break;
 		}
-    }
-    return data[0];
+		iterations++;
+	}
+	return data[0];
 }
-float3 Gradient(float3 pos)
+float3 gradient(float3 pos, Oct frame)
 {
-	Oct frame = find(pos);
-	float3 incX = float3(pos.x + 1, pos.y, pos.z);
-	float3 incY = float3(pos.x, pos.y + 1, pos.z);
-	float3 incZ = float3(pos.x, pos.y, pos.z + 1);
+	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
+	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
+	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
 	float at = frame.interpol(pos);
 	float x = frame.interpol(incX);
 	float y = frame.interpol(incY);
 	float z = frame.interpol(incZ);
 	return float3(x - at, y - at, z - at);
 }
+
 float3 ray(uint2 coord)
 {
-	return normalize(mul(float3(inf.absoluteDimensions / (float2)coord - float2(.5, .5), .5), inf.heading));
+	float2 screendir = (float2)coord / inf.screen_size - float2(.5, .5);
+	float3 dir = mul(float3(screendir, .5), inf.heading);
+	return normalize(dir);
 }
 void set(float4 value, uint2 coord)
 {
-	BufferOut[coord.x + coord.y*inf.absoluteDimensions.x] = value;
+	tex[coord.xy] = value;
 }
 
 
@@ -122,17 +134,17 @@ void CS(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	uint2 coord = absoluteCoord(threadID, groupID);
     float3 dir = ray(coord);
 	float prox = 1;
-
-	for (int i = 0; i < 100 && data[0].inside(pos) && abs(prox) > inf.margin; i++)
-    {
-		Oct current = find(pos); //data[0];//find(pos);
+	Oct current = find(pos, data[0]);
+	// remove multiplications?
+	for (int i = 0; i < 100 && pos.x*pos.x + pos.y*pos.y + pos.z*pos.z < inf.limit && abs(prox) > inf.margin; i++) {
+		current = find(pos, current); //data[0];//find(pos);
         prox = current.interpol(pos);
         
         if (prox <= inf.margin)
         {
-			float3 grad = float3(Gradient(pos));
+			float3 grad = float3(gradient(pos, current));
 			float3 col = float3(abs(grad.x), abs(grad.y), abs(grad.z));
-            set(float4(normalize(col), 0), threadID, groupID);
+            set(float4(normalize(col), 0), coord);
 			return;
         }
         pos += dir * (prox) * (1 + inf.margin);
