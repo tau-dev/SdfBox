@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace SDFbox {
-    class Math
+    class SdfMath
     {
         public static float Lerp3(Vector8 a, Vector3 d)
         {

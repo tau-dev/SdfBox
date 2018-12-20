@@ -138,7 +138,7 @@ namespace SDFbox
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 80)]
+    [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 96)]
     struct Info
     {
         Float3x3 heading;
@@ -147,6 +147,7 @@ namespace SDFbox
         Vector2 screen_size;
         int buffer_size;
         float limit;
+        Vector3 light;
 
         public Info(Float3x3 heading, Vector3 position, int dataSize)
         {
@@ -163,6 +164,7 @@ namespace SDFbox
                     furthest = distance;
             }
             limit = furthest + furthest;
+            light = new Vector3(0, 0, 0);
         }
     }
 

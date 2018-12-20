@@ -1,6 +1,6 @@
 
-#define groupSizeX 28
-#define groupSizeY 28
+#define groupSizeX 25
+#define groupSizeY 25
 #define OctCount 73
 
 struct Oct
@@ -18,9 +18,18 @@ struct Oct
 	{
 		return all(lower <= pos) && all(pos <= higher);
 	}
-	float interpol(float3 pos)
+	float interpol_world(float3 pos)
 	{
-		float3 d = (pos - lower) / (higher - lower);
+		float3 d = saturate((pos - lower) / (higher - lower));
+		float cOO = lerp(vertsL.x, vertsL.y, d.x);
+		float cOI = lerp(vertsL.z, vertsL.w, d.x);
+		float cIO = lerp(vertsH.x, vertsH.y, d.x);
+		float cII = lerp(vertsH.z, vertsH.w, d.x);
+		return lerp(lerp(cOO, cOI, d.y),
+			lerp(cIO, cII, d.y), d.z);
+	}
+	float interpol_inside(float3 d)
+	{
 		float cOO = lerp(vertsL.x, vertsL.y, d.x);
 		float cOI = lerp(vertsL.z, vertsL.w, d.x);
 		float cIO = lerp(vertsH.x, vertsH.y, d.x);
@@ -57,9 +66,11 @@ Oct find(float3 pos, Oct c)
 {
 	int index = 0;
 	int iterations = 0;
-	while (!c.inside(pos) && c.parent >= 0) {
-		index = c.parent;
-		c = data[index];
+	if (c.parent >= 0) {
+		do {
+			index = c.parent;
+			c = data[index];
+		} while (!c.inside(pos) && c.parent >= 0);
 	}
 	while (index < inf.buffer_size && iterations < 12) {
 		c = data[index];
@@ -104,13 +115,14 @@ Oct find(float3 pos, Oct c)
 }
 float3 gradient(float3 pos, Oct frame)
 {
+	pos = (pos - frame.lower) / (frame.higher - frame.lower);
 	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
 	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
 	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
-	float at = frame.interpol(pos);
-	float x = frame.interpol(incX);
-	float y = frame.interpol(incY);
-	float z = frame.interpol(incZ);
+	float at = frame.interpol_inside(pos);
+	float x = frame.interpol_inside(incX);
+	float y = frame.interpol_inside(incY);
+	float z = frame.interpol_inside(incZ);
 	return float3(x - at, y - at, z - at);
 }
 
@@ -125,6 +137,21 @@ void set(float4 value, uint2 coord)
 	tex[coord.xy] = value;
 }
 
+float2 box_intersect(Oct c, float3 pos, float3 dir)
+{
+	float3 inv_dir = 1 / dir;
+	float3 t1 = (c.lower - pos)*inv_dir;
+	float3 t2 = (c.higher - pos)*inv_dir;
+
+	return float2(max(max(
+		min(t1.x, t2.x), 
+		min(t1.y, t2.y)), 
+		min(t1.z, t2.z)), // three intersections behind pos
+	min(min(
+		max(t1.x, t2.x), 
+		max(t1.y, t2.y)), 
+		max(t1.z, t2.z))); // three intersections after pos
+}
 
 
 [numthreads(groupSizeX, groupSizeY, 1)]
@@ -136,20 +163,64 @@ void CS(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	float prox = 1;
 	Oct current = find(pos, data[0]);
 	// remove multiplications?
-	for (int i = 0; i < 100 && pos.x*pos.x + pos.y*pos.y + pos.z*pos.z < inf.limit && abs(prox) > inf.margin; i++) {
+
+	for (int i = 0; prox > inf.margin; i++) {
+		if (!(i < 100 && pos.x*pos.x + pos.y*pos.y + pos.z*pos.z < inf.limit && abs(prox) > inf.margin)) {
+			set(float4(0.1, 0.2, 0.4, 1), coord);
+			return;
+		}
 		current = find(pos, current); //data[0];//find(pos);
-        prox = current.interpol(pos);
-        
-        if (prox <= inf.margin)
-        {
+		if (current.empty == 0) {
+			float2 res = box_intersect(current, pos, dir);
+			if (res.x < res.y) {
+				float3 a = pos + dir * res.x;
+				float3 b = pos + dir * res.y;
+				float vala = current.interpol_world(a);
+				float valb = current.interpol_world(b);
+				if (vala <= 0 || valb <= 0) {
+					pos = lerp(a, b, vala / (vala - valb));
+					break;
+				}
+			}
+		}
+		
+        prox = current.interpol_world(pos);
+		pos += dir * (prox) * (1 + inf.margin);
+		/*
 			float3 grad = float3(gradient(pos, current));
 			float3 col = float3(abs(grad.x), abs(grad.y), abs(grad.z));
-            set(float4(normalize(col), 0), coord);
+			set(float4(normalize(col), 0), coord);
 			return;
-        }
-        pos += dir * (prox) * (1 + inf.margin);
+		*/
     }
+	
+	for (int i = 0; i < 3; i++) {
+		prox = current.interpol_world(pos);
+		pos += dir * (prox) * (1 + inf.margin);
+	}
 
-    set(float4(0.1, 0.2, 0.4, 1), coord);
-    return;
+	dir = normalize(inf.light - pos);
+	pos += dir * inf.margin;
+	float angle = dot(dir, normalize(gradient(pos, current)));
+	if (angle < 0) {
+		set(float4(0, 0, 0, 1), coord);
+		return;
+	}
+	float dist = length(inf.light - pos);
+
+	for (int j = 0; j < 40 && prox > -inf.margin; j++) {
+		if (dist < prox) {
+			set(float4(angle, angle, angle, 1), coord);
+			return;
+		}
+		current = find(pos, current); //data[0];//find(pos);
+		if (current.empty == 0) {
+			pos = pos + dir * box_intersect(current, pos, dir).y;
+		}
+		prox = current.interpol_world(pos);
+		pos += dir * (prox) * (1 + inf.margin);
+		dist = length(inf.light - pos);
+	}
+	set(float4(0, 0, 0, 1), coord);
+	return;
 }

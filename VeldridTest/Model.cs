@@ -68,7 +68,7 @@ namespace SDFbox
             float error(float center, float[] values, float scale, Vector3 pos)
             {
                 Vector3 test = Vector3.One / 2;
-                return System.Math.Abs(center - Math.Lerp3(new Vector8(values), test));
+                return System.Math.Abs(center - SdfMath.Lerp3(new Vector8(values), test));
             }
         }
 

@@ -80,7 +80,7 @@ namespace SDFbox
             commandList.Begin();
             commandList.SetPipeline(computePipeline);
             commandList.SetComputeResourceSet(0, computeResources);
-            commandList.Dispatch((uint) window.Width / 28, (uint) window.Height / 28, 1);
+            commandList.Dispatch((uint) window.Width / 25, (uint) window.Height / 25, 1);
             commandList.End();
             graphicsDevice.SubmitCommands(commandList);
             
