@@ -1,28 +1,28 @@
 ﻿#region TODO
 /*
- * Pruning
-        Undivide (turn into leaves) all branches with smallest(absolute distance) > 2*sidelength
- * Use Compute shader
-        Figure out storing & display of image
-        Figure out data transfers
+ * Modeling
+ * GUI layer
  * 
  */
 #endregion
 
+using ImGuiNET;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
-using System.Runtime.InteropServices;
 
 namespace SDFbox
 {
     class Program
     {
         static Sdl2Window window;
-        static GraphicsDevice graphicsDevice;
+        public static GraphicsDevice graphicsDevice;
+        public static ResourceFactory factory;
         static CommandList commandList;
         static DeviceBuffer vertexBuffer;
         static DeviceBuffer indexBuffer;
@@ -30,41 +30,51 @@ namespace SDFbox
         static DeviceBuffer dataSBuffer;
         static DeviceBuffer infoUBuffer;
         static TextureView resultTBuffer;
-        static ResourceSet computeResources;
         static ResourceSet structuredResources;
-        static ResourceLayout computeResourceLayout;
         static ResourceLayout resourceLayout;
         static Shader vertexShader;
         static Shader fragmentShader;
-        static Shader computeShader;
         static Texture renderTexture;
-        static Pipeline computePipeline;
         static Pipeline pipeline;
-        static ResourceFactory factory;
+        static ComputeUnit compUnit;
 
         static void Main(string[] args)
         {
+            DateTime start = DateTime.Now;
+            OctS[] model = Logic.MakeData(args[0]);
+            TimeSpan duration = DateTime.Now - start;
+            Console.WriteLine(duration);
             window = Utilities.MakeWindow(720, 720);
 
-            window.KeyDown += Logic.KeyHandler;
+            Logic.ResetKeys();
+            window.KeyDown += Logic.KeyDown;
+            window.KeyUp += Logic.KeyUp;
             window.MouseMove += (MouseMoveEventArgs mouseEvent) => {
                 if (mouseEvent.State.IsButtonDown(0)) {
                     window.SetMousePosition(360, 360);
-                    Logic.MouseMove(mouseEvent.MousePosition - new Vector2(360, 360));
+                    if (Logic.mouseDown)
+                        Logic.MouseMove(mouseEvent.MousePosition - new Vector2(360, 360));
                 }
+                Logic.mouseDown = mouseEvent.State.IsButtonDown(0);
             };
 
             graphicsDevice = VeldridStartup.CreateGraphicsDevice(window);
 
-            CreateResources();
+            CreateResources(model);
+
+            ImGui.CreateContext();
 
             FPS fpsCounter = new FPS();
+            DateTime time = DateTime.Now;
 
             while (window.Exists) {
                 window.PumpEvents();
+                Logic.Update(DateTime.Now - start);
+                start = DateTime.Now;
                 Draw();
                 fpsCounter.Frame();
             }
+            ImGui.DestroyContext();
             DisposeResources();
         }
 
@@ -76,81 +86,82 @@ namespace SDFbox
             });
 
             graphicsDevice.UpdateBuffer(infoUBuffer, 0, Logic.GetInfo);
-
-            commandList.Begin();
-            commandList.SetPipeline(computePipeline);
-            commandList.SetComputeResourceSet(0, computeResources);
-            commandList.Dispatch((uint) window.Width / 25, (uint) window.Height / 25, 1);
-            commandList.End();
+            var cl = commandList;
+            cl.Begin();
+            compUnit.DispatchSized(cl, (uint) window.Width, (uint) window.Height, 1);
+            cl.End();
             graphicsDevice.SubmitCommands(commandList);
-            
 
 
-            commandList.Begin();
-            commandList.SetFramebuffer(graphicsDevice.SwapchainFramebuffer);
-            commandList.SetFullViewports();
 
-            commandList.ClearColorTarget(0, RgbaFloat.Black);
-            
-            commandList.SetPipeline(pipeline);
-            commandList.SetGraphicsResourceSet(0, structuredResources);
-            commandList.SetVertexBuffer(0, vertexBuffer);
-            commandList.SetIndexBuffer(indexBuffer, IndexFormat.UInt16);
-            commandList.DrawIndexed(
+            cl.Begin();
+            cl.SetFramebuffer(graphicsDevice.SwapchainFramebuffer);
+            cl.SetFullViewports();
+
+            cl.ClearColorTarget(0, RgbaFloat.Black);
+
+            cl.SetPipeline(pipeline);
+            cl.SetGraphicsResourceSet(0, structuredResources);
+            cl.SetVertexBuffer(0, vertexBuffer);
+            cl.SetIndexBuffer(indexBuffer, IndexFormat.UInt16);
+            cl.DrawIndexed(
                 indexStart: 0,
                 indexCount: 4,
                 instanceStart: 0,
                 instanceCount: 1,
                 vertexOffset: 0);
-
-            commandList.End();
+            cl.End();
             graphicsDevice.SubmitCommands(commandList);
-            
+            /*
+            cl.Begin();
+            cl.SetFramebuffer(graphicsDevice.MainSwapchain.Framebuffer);
+            _controller.Render(graphicsDevice, cl);
+            cl.End();
+            graphicsDevice.SubmitCommands(cl);//*/
+
+            graphicsDevice.SwapBuffers(graphicsDevice.MainSwapchain);
             graphicsDevice.SwapBuffers();
         }
 
 
-        static void CreateResources()
+        static void CreateResources(OctS[] octData)
         {
             factory = graphicsDevice.ResourceFactory;
             Vertex[] quadVertices = Logic.ScreenQuads;
             ushort[] quadIndices = { 0, 1, 2, 3 };
 
 
-            OctS[] octData = Logic.MakeData("model");
-
             vertexBuffer = MakeBuffer(quadVertices, BufferUsage.VertexBuffer);
             indexBuffer = MakeBuffer(quadIndices, BufferUsage.IndexBuffer);
 
             Console.WriteLine(Marshal.SizeOf(octData[0]));
 
-            renderTexture = MakeTexture((uint) window.Width, (uint) window.Height);
+            renderTexture = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
             dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
             resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
             infoUBuffer = MakeBuffer(Logic.GetInfo, BufferUsage.UniformBuffer);
 
-            computeResourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
-                new ResourceLayoutElementDescription("SB0", ResourceKind.StructuredBufferReadOnly, ShaderStages.Compute),
-                new ResourceLayoutElementDescription("TB0", ResourceKind.TextureReadWrite, ShaderStages.Compute),
-                new ResourceLayoutElementDescription("UB0", ResourceKind.UniformBuffer, ShaderStages.Compute)
-            }));
             resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
                 new ResourceLayoutElementDescription("TB0", ResourceKind.TextureReadOnly, ShaderStages.Fragment)
             }));
-            computeResources = factory.CreateResourceSet(new ResourceSetDescription(computeResourceLayout, dataSBuffer, resultTBuffer, infoUBuffer));
             structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, resultTBuffer));
-            
+
 
             vertexShader = LoadShader(ShaderStages.Vertex);
             fragmentShader = LoadShader("DisplayFrag", ShaderStages.Fragment);
-            computeShader = LoadShader(ShaderStages.Compute);
 
             MakePipeline();
-            MakeComputePipeline();
+
+            var compUDesc = new ComputeUnit.Description(LoadShader(ShaderStages.Compute));
+            compUDesc.AddResource("SB0", ResourceKind.StructuredBufferReadOnly, dataSBuffer);
+            compUDesc.AddResource("TB0", ResourceKind.TextureReadWrite, resultTBuffer);
+            compUDesc.AddResource("UB0", ResourceKind.UniformBuffer, infoUBuffer);
+
+            compUnit = new ComputeUnit(factory, compUDesc);
 
             commandList = factory.CreateCommandList();
         }
-        static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0) where T : struct
+        public static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0) where T : struct
         {
             BufferDescription description;
             uint structuredStride = 0;
@@ -179,25 +190,26 @@ namespace SDFbox
 
             description = new BufferDescription(size, usage, structuredStride);
             DeviceBuffer newBuffer = factory.CreateBuffer(description);
-            
+
             return newBuffer;
         }
         static Texture MakeTexture(uint x, uint y)
         {
-            TextureDescription tDesc = new TextureDescription();
-            tDesc.Type = TextureType.Texture2D;
-            tDesc.ArrayLayers = 0;
-            tDesc.Format = PixelFormat.R32_G32_B32_A32_Float;
-            tDesc.Width = x;
-            tDesc.Height = y;
-            tDesc.Depth = 1;
-            tDesc.Usage = TextureUsage.Storage | TextureUsage.Sampled;
-            tDesc.MipLevels = 1;
+            TextureDescription tDesc = new TextureDescription {
+                Type = TextureType.Texture2D,
+                ArrayLayers = 0,
+                Format = PixelFormat.R32_G32_B32_A32_Float,
+                Width = x,
+                Height = y,
+                Depth = 1,
+                Usage = TextureUsage.Storage | TextureUsage.Sampled,
+                MipLevels = 1
+            };
             tDesc.ArrayLayers = 1;
             tDesc.SampleCount = TextureSampleCount.Count1;
             return factory.CreateTexture(tDesc);
         }
-        static Shader LoadShader(string name, ShaderStages stage)
+        public static Shader LoadShader(string name, ShaderStages stage)
         {
             string extension = GraphicsExtension();
             Console.WriteLine(extension);
@@ -210,7 +222,7 @@ namespace SDFbox
                     entryPoint = "FS";
                     break;
                 case ShaderStages.Compute:
-                    entryPoint = "CS";
+                    entryPoint = "main";
                     break;
             }
             string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
@@ -221,13 +233,13 @@ namespace SDFbox
             {
                 switch (graphicsDevice.BackendType) {
                     case GraphicsBackend.Direct3D11:
-                        return ("hlsl.bytes");
+                        return "hlsl";        // RUNTIME-COMPILE
                     case GraphicsBackend.Vulkan:
-                        return ("spv");
+                        return "spv";
                     case GraphicsBackend.OpenGL:
-                        return ("glsl");
+                        return "glsl";
                     case GraphicsBackend.Metal:
-                        return ("metallib");
+                        return "metallib";
                     default: throw new InvalidOperationException();
                 }
             }
@@ -245,25 +257,13 @@ namespace SDFbox
 
             Utilities.SetStencilState(pipelineDescription);
             Utilities.SetRasterizerState(pipelineDescription);
-
+            // TODO: inline this v ^
             pipelineDescription.PrimitiveTopology = PrimitiveTopology.TriangleStrip;
             pipelineDescription.ResourceLayouts = new ResourceLayout[] { resourceLayout };
             pipelineDescription.ShaderSet = Utilities.MakeShaderSet(vertexShader, fragmentShader);
             pipelineDescription.Outputs = graphicsDevice.SwapchainFramebuffer.OutputDescription;
 
             pipeline = factory.CreateGraphicsPipeline(pipelineDescription);
-        }
-        static void MakeComputePipeline()
-        {
-            ComputePipelineDescription pipelineDescription = new ComputePipelineDescription();
-            
-            pipelineDescription.ResourceLayouts = new ResourceLayout[] { computeResourceLayout };
-            pipelineDescription.ComputeShader = computeShader;
-            pipelineDescription.ThreadGroupSizeX = 32;
-            pipelineDescription.ThreadGroupSizeY = 32;
-            pipelineDescription.ThreadGroupSizeX = 1;
-
-            computePipeline = factory.CreateComputePipeline(pipelineDescription);
         }
 
         static void DisposeResources()
@@ -282,7 +282,13 @@ namespace SDFbox
                 return new Vector2(window.Width, window.Height);
             }
         }
+        public static uint Round(float val, int blocksize)
+        {
+            return (uint) (val + blocksize - val % blocksize);
+        }
     }
+
+
 
     struct Vertex
     {
@@ -302,12 +308,13 @@ namespace SDFbox
 
     ///*
     [StructLayout(LayoutKind.Sequential, Pack = 16)]
+    [Serializable]
     struct OctS
     {
-        public Int32 Parent;
+        public int Parent;
         public Vector3 lower;
         public Vector3 higher;
-        public Int32 empty;
+        public int empty;
 
         public Int8 children;
         public Vector8 verts;
@@ -338,9 +345,50 @@ namespace SDFbox
             this.verts = new Vector8(verts);
 
             empty = 1;
-            foreach(float x in verts) {
+            foreach (float x in verts) {
                 if (x <= 0)
                     empty = 0;
+            }
+        }
+
+        public static void Serialize(OctS[] octs, BinaryWriter writer)
+        {
+            foreach (OctS current in octs) {
+                writer.Write(current.Parent);
+                writer.Write(current.empty);
+                current.children.Serialize(writer);
+                current.verts.Serialize(writer);
+            }
+        }
+
+        public static OctS[] Deserialize(BinaryReader reader)
+        {
+            List<OctS> read = new List<OctS>();
+            while (reader.BaseStream.Position != reader.BaseStream.Length) {
+                read.Add(new OctS() {
+                    Parent = reader.ReadInt32(),
+                    empty = reader.ReadInt32(),
+                    children = Int8.Deserialize(reader),
+                    verts = Vector8.Deserialize(reader)
+                });
+            }
+            Rectify(0, Vector3.Zero, 1);
+
+            return read.ToArray();
+
+            void Rectify(int p, Vector3 lower, float scale)
+            {
+                OctS current = read[p];
+                current.lower = lower;
+                current.higher = lower + Vector3.One * scale;
+                read[p] = current;
+                if (current.children.S == -1)
+                    return;
+
+                scale /= 2;
+                for (int i = 0; i < 8; i++) {
+                    Rectify(current.children.Array[i], lower + SdfMath.split(i).Vector * scale, scale);
+                }
             }
         }
     }
@@ -396,6 +444,37 @@ namespace SDFbox
             Y = d[6];
             Z = d[7];
         }
+
+
+        public int[] Array {
+            get {
+                return new int[] { S, T, U, V, W, X, Y, Z };
+            }
+        }
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(S);
+            writer.Write(T);
+            writer.Write(U);
+            writer.Write(V);
+            writer.Write(W);
+            writer.Write(X);
+            writer.Write(Y);
+            writer.Write(Z);
+        }
+        public static Int8 Deserialize(BinaryReader reader)
+        {
+            return new Int8(
+                reader.ReadInt32(),
+                reader.ReadInt32(),
+                reader.ReadInt32(),
+                reader.ReadInt32(),
+                reader.ReadInt32(),
+                reader.ReadInt32(),
+                reader.ReadInt32(),
+                reader.ReadInt32());
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 32)]
@@ -431,6 +510,36 @@ namespace SDFbox
             X = d[5];
             Y = d[6];
             Z = d[7];
+        }
+
+        public float[] Array {
+            get {
+                return new float[] { S, T, U, V, W, X, Y, Z };
+            }
+        }
+
+        public void Serialize(BinaryWriter writer)
+        {
+            writer.Write(S);
+            writer.Write(T);
+            writer.Write(U);
+            writer.Write(V);
+            writer.Write(W);
+            writer.Write(X);
+            writer.Write(Y);
+            writer.Write(Z);
+        }
+        public static Vector8 Deserialize(BinaryReader reader)
+        {
+            return new Vector8(
+                reader.ReadSingle(),
+                reader.ReadSingle(),
+                reader.ReadSingle(),
+                reader.ReadSingle(),
+                reader.ReadSingle(),
+                reader.ReadSingle(),
+                reader.ReadSingle(),
+                reader.ReadSingle());
         }
     }
 }

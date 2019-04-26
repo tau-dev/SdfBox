@@ -1,4 +1,6 @@
 
+#pragma warning( disable: 3571  )
+
 #define groupSizeX 25
 #define groupSizeY 25
 #define OctCount 73
@@ -20,22 +22,29 @@ struct Oct
 	}
 	float interpol_world(float3 pos)
 	{
-		float3 d = saturate((pos - lower) / (higher - lower));
+		float3 d = saturate((pos - lower) / (higher - lower)); //smoothstep(lower, higher, pos);//
+		return interpol_inside(d);
+		/*
 		float cOO = lerp(vertsL.x, vertsL.y, d.x);
 		float cOI = lerp(vertsL.z, vertsL.w, d.x);
 		float cIO = lerp(vertsH.x, vertsH.y, d.x);
 		float cII = lerp(vertsH.z, vertsH.w, d.x);
 		return lerp(lerp(cOO, cOI, d.y),
-			lerp(cIO, cII, d.y), d.z);
+			lerp(cIO, cII, d.y), d.z);*/
 	}
 	float interpol_inside(float3 d)
 	{
+		///*
 		float cOO = lerp(vertsL.x, vertsL.y, d.x);
 		float cOI = lerp(vertsL.z, vertsL.w, d.x);
 		float cIO = lerp(vertsH.x, vertsH.y, d.x);
 		float cII = lerp(vertsH.z, vertsH.w, d.x);
 		return lerp(lerp(cOO, cOI, d.y),
 			lerp(cIO, cII, d.y), d.z);
+		//*/
+		/*float4 cO = lerp(vertsL, vertsH, d.z);
+		float2 cI = lerp(cO.xy, cO.zw, d.y);
+		return lerp(cI.x, cI.y, d.x);*/
 	}
 };
 
@@ -45,13 +54,13 @@ struct Info
 	float3 position;
 	float margin;
 	float2 screen_size;
-	uint buffer_size;
+	int buffer_size;
 	float limit;
 	float3 light;
 };
 
 StructuredBuffer<Oct> data : register(t0);
-RWTexture2D<float3> tex : register(t1);
+RWTexture2D<float3> tex : register(u0);
 cbuffer B : register(b0)
 {
 	Info inf;
@@ -132,9 +141,9 @@ float3 ray(uint2 coord)
 	float3 dir = mul(float3(screendir, .5), inf.heading);
 	return normalize(dir);
 }
-void set(float4 value, uint2 coord)
+void set(float3 value, uint2 coord)
 {
-	tex[coord.xy] = value;
+	tex[coord.xy] = value;//pow(value, 1 / 2.2);
 }
 
 float2 box_intersect(Oct c, float3 pos, float3 dir)
@@ -155,7 +164,7 @@ float2 box_intersect(Oct c, float3 pos, float3 dir)
 
 
 [numthreads(groupSizeX, groupSizeY, 1)]
-void CS(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
+void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 {
     float3 pos = inf.position;
 	uint2 coord = absoluteCoord(threadID, groupID);
@@ -165,8 +174,8 @@ void CS(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	// remove multiplications?
 
 	for (int i = 0; prox > inf.margin; i++) {
-		if (!(i < 100 && pos.x*pos.x + pos.y*pos.y + pos.z*pos.z < inf.limit && abs(prox) > inf.margin)) {
-			set(float4(0.1, 0.2, 0.4, 1), coord);
+		if (!(i < 100 && dot(pos, pos) < inf.limit && abs(prox) > inf.margin)) {
+			set(float3(0.05, 0.1, 0.4), coord);
 			return;
 		}
 		current = find(pos, current); //data[0];//find(pos);
@@ -193,24 +202,24 @@ void CS(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 			return;
 		*/
     }
-	
-	for (int i = 0; i < 3; i++) {
-		prox = current.interpol_world(pos);
-		pos += dir * (prox) * (1 + inf.margin);
-	}
+
+	prox = current.interpol_world(pos);
+	pos += dir * prox * (1 + inf.margin);
 
 	dir = normalize(inf.light - pos);
 	pos += dir * inf.margin;
 	float angle = dot(dir, normalize(gradient(pos, current)));
 	if (angle < 0) {
-		set(float4(0, 0, 0, 1), coord);
+		set(float3(0, 0, 0), coord);
 		return;
 	}
 	float dist = length(inf.light - pos);
+	float lighting_dist = dist;
 
 	for (int j = 0; j < 40 && prox > -inf.margin; j++) {
 		if (dist < prox) {
-			set(float4(angle, angle, angle, 1), coord);
+			float attenuation = angle / (lighting_dist*lighting_dist) * 5;
+			set(float3(attenuation, attenuation, attenuation), coord);
 			return;
 		}
 		current = find(pos, current); //data[0];//find(pos);
@@ -218,9 +227,9 @@ void CS(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 			pos = pos + dir * box_intersect(current, pos, dir).y;
 		}
 		prox = current.interpol_world(pos);
-		pos += dir * (prox) * (1 + inf.margin);
+		pos += dir * prox * (1 + inf.margin);
 		dist = length(inf.light - pos);
 	}
-	set(float4(0, 0, 0, 1), coord);
+	set(float3(0, 0, 0), coord);
 	return;
 }

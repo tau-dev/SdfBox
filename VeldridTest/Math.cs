@@ -1,11 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace SDFbox {
+namespace SDFbox
+{
     class SdfMath
     {
         public static float Lerp3(Vector8 a, Vector3 d)
@@ -16,6 +13,14 @@ namespace SDFbox {
             float cII = Lerp(a.Y, a.Z, d.X);
             return Lerp(Lerp(cOO, cIO, d.Y),
                 Lerp(cOI, cII, d.Y), d.Z);
+        }
+        public static Int3 split(int index)
+        {
+            return new Int3() {
+                X = index % 2,
+                Y = index / 2 % 2,
+                Z = index / 4 % 2
+            };
         }
         public static float Lerp(float a, float b, float p)
         {

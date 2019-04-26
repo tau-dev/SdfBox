@@ -1,9 +1,9 @@
-﻿using System;
+﻿
+using Converter;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Converter;
-using System.Threading.Tasks;
-using System.Runtime.Serialization;
+
 
 namespace SDFbox
 {
@@ -15,21 +15,25 @@ namespace SDFbox
         SaveModel save;
         const float HalfSqrt3 = 0.866025f;
         const float precision = 0.002f;
-        const float maxResolution = 0.02f;
+        const float maxResolution = 0.004f;
 
         public Model(Octree c)
         {
             Tree = c;
+        }
+        public Model(OctS[] c)
+        {
+            Tree = Octree.Load(c, 0);
         }
         public Model(SaveModel model)
         {
             save = model;
             Tree = construct(new Queue<bool>(save.Hierachy));
             Tree.Init(save, new Int3(0, 0, 0), 0);
-            
+
             Octree construct(Queue<bool> hierachy)
             {
-                if(hierachy.Dequeue() == false) {
+                if (hierachy.Dequeue() == false) {
                     return new Octree();
                 } else {
                     Octree[] children = new Octree[8];
@@ -40,35 +44,36 @@ namespace SDFbox
                 }
             }
         }
-        public Model(VertexModel vmodel)
+        public Model(VertexModel vmodel)// : this(Utilities.Convert(vmodel))
         {
-            Tree = construct(vmodel, 1, Vector3.Zero, HalfSqrt3*2);
+            Tree = construct(vmodel, 1, Vector3.Zero, vmodel.All());
 
-            Octree construct(VertexModel vm, float scale, Vector3 pos, float guess)
+            Octree construct(VertexModel vm, float scale, Vector3 pos, List<int> possible)
             {
                 float[] verts = new float[8];
-                float center = vm.DistanceAt(pos + Vector3.One * 0.5f * scale, guess + HalfSqrt3*scale);
-                Parallel.For(0, 8, (i) => {
-                    verts[i] = vm.DistanceAt(pos + Octree.split(i).Vector * scale, System.Math.Abs(center) + HalfSqrt3 * scale);
-                });
+                Vector3 center = pos + Vector3.One * 0.5f * scale;
+                float centerValue = vm.DistanceAt(center, possible);
+                possible = vm.GetPossible(center, Math.Abs(centerValue) + HalfSqrt3 * scale, possible);
+                for (int i = 0; i < 8; i++) {
+                    verts[i] = vm.DistanceAt(pos + SdfMath.split(i).Vector * scale, possible);
+                }
                 Octree build = new Octree(verts);
-                
-                
-                if (error(center, build.Vertices, scale, pos) > precision && scale > maxResolution) {
-                    Console.WriteLine(error(center, build.Vertices, scale, pos));
+
+
+                if (centerValue < scale && scale > maxResolution) { // error(centerValue, build.Vertices, pos) > precision
                     Octree[] children = new Octree[8];
                     for (int i = 0; i < 8; i++) {
-                        children[i] = construct(vm, scale / 2, pos + Octree.split(i).Vector * scale / 2, System.Math.Abs(center));
+                        children[i] = construct(vm, scale / 2, pos + SdfMath.split(i).Vector * scale / 2, possible);
                     }
                     build.Children = children;
                 }
 
                 return build;
             }
-            float error(float center, float[] values, float scale, Vector3 pos)
+            float error(float center, float[] values, Vector3 pos)
             {
                 Vector3 test = Vector3.One / 2;
-                return System.Math.Abs(center - SdfMath.Lerp3(new Vector8(values), test));
+                return Math.Abs(1 - SdfMath.Lerp3(new Vector8(values), test) / center);
             }
         }
 
@@ -102,7 +107,7 @@ namespace SDFbox
     [Serializable]
     class Octree
     {
-        Octree parent;
+        [NonSerialized] Octree parent;
         public Octree[] Children;
         public float[] Vertices;
 
@@ -124,31 +129,46 @@ namespace SDFbox
         }
         public Octree(Octree[] children, float[] vertices)
         {
-            if(children.Length != 8)
-                    throw new ArgumentException();
+            if (children.Length != 8)
+                throw new ArgumentException();
             if (vertices.Length != 8)
-                    throw new ArgumentException();
+                throw new ArgumentException();
             Vertices = vertices;
             Children = children;
             foreach (Octree child in children) {
                 child.parent = this;
             }
         }
-        
+
         internal void Init(SaveModel data, Int3 pos, int level)
         {
             Vertices = new float[8];
 
             for (int i = 0; i < 8; i++) {
-                Vertices[i] = data.Values[(pos + split(i))*data.ScaleLevel(level)];
+                Vertices[i] = data.Values[(pos + SdfMath.split(i))*data.ScaleLevel(level)];
             }
 
             if (Children != null) {
                 for (int i = 0; i < 8; i++) {
-                    Children[i].Init(data, pos * 2 + split(i), level + 1);
+                    Children[i].Init(data, pos * 2 + SdfMath.split(i), level + 1);
                 }
             }
         }
+
+        public static Octree Load(OctS[] raw, int position)
+        {
+            OctS point = raw[position];
+            Octree current = new Octree(point.verts.Array);
+            if (point.children.X > 0) {
+                Octree[] children = new Octree[8];
+                for (int i = 0; i < 8; i++) {
+                    children[i] = Load(raw, point.children.Array[i]);
+                }
+                current.Children = children;
+            }
+            return current;
+        }
+
 
         public OctS[] Cast()
         {
@@ -158,7 +178,7 @@ namespace SDFbox
         }
         private void Cast(List<OctS> octs, float scale, Vector3 pos, int parent)
         {
-            if(Children == null) {
+            if (Children == null) {
                 octs.Add(new OctS(parent, new int[] { -1, -1, -1, -1, -1, -1, -1, -1 }, Vertices, pos, pos + Vector3.One * scale));
             } else {
                 int mypos = octs.Count;
@@ -166,30 +186,23 @@ namespace SDFbox
                 int[] childindices = new int[8];
                 for (int i = 0; i < 8; i++) {
                     childindices[i] = octs.Count;
-                    Children[i].Cast(octs, scale / 2, 
-                        pos + split(i).Vector * scale / 2,
+                    Children[i].Cast(octs, scale / 2,
+                        pos + SdfMath.split(i).Vector * scale / 2,
                         mypos);
                 }
                 octs[mypos] = new OctS(parent, childindices, Vertices, pos, pos + Vector3.One * scale);
             }
         }
-        public static void reduce(ref Int3 pos, ref int level)
+        public static void Reduce(ref Int3 pos, ref int level)
         {
             while (pos % 2 == 0 && level > 0) {
                 pos /= 2;
                 level--;
             }
         }
-        public static Int3 split(int index)
-        {
-            return new Int3() {
-                X = index % 2,
-                Y = index / 2 % 2,
-                Z = index / 4 % 2
-            };
-        }
     }
 
+    [Serializable]
     class SaveModel
     {
         public bool[] Hierachy { get; }
@@ -251,19 +264,19 @@ namespace SDFbox
             }
         }
 
-        public static Int3 operator+ (Int3 a, Int3 b)
+        public static Int3 operator +(Int3 a, Int3 b)
         {
             return new Int3(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
         }
-        public static Int3 operator* (Int3 a, int b)
+        public static Int3 operator *(Int3 a, int b)
         {
             return new Int3(a.X * b, a.Y * b, a.Z * b);
         }
-        public static Int3 operator/ (Int3 a, int b)
+        public static Int3 operator /(Int3 a, int b)
         {
             return new Int3(a.X / b, a.Y / b, a.Z / b);
         }
-        public static int operator% (Int3 a, int b)
+        public static int operator %(Int3 a, int b)
         {
             return a.X % b + a.Y % b + a.Z % b;
         }
@@ -274,8 +287,7 @@ namespace SDFbox
         }
         public override bool Equals(object obj)
         {
-            if (obj is Int3) {
-                Int3 other = (Int3) obj;
+            if (obj is Int3 other) {
                 return X == other.X && Y == other.Y && Z == other.Z;
             }
             return false;
