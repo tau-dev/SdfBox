@@ -1,14 +1,15 @@
 ﻿#region TODO
 /*
  * Modeling
- * GUI layer
- * 
+ * Moar lights
+ * Moar speed
  */
 #endregion
 
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -20,57 +21,49 @@ namespace SDFbox
 {
     class Program
     {
-        static Sdl2Window window;
-        public static GraphicsDevice graphicsDevice;
+        //TODO: Encapsulate most of this
+        public static Sdl2Window window;
+        public static GraphicsDevice device;
         public static ResourceFactory factory;
+        public static ImGuiRenderer imGuiRenderer;
         static CommandList commandList;
-        static DeviceBuffer vertexBuffer;
-        static DeviceBuffer indexBuffer;
+        static DeviceBuffer quadVertexBuffer;
+        static DeviceBuffer debugVertexBuffer;
 
         static DeviceBuffer dataSBuffer;
         static DeviceBuffer infoUBuffer;
+        static DeviceBuffer drawUBuffer;
         static TextureView resultTBuffer;
-        static ResourceSet structuredResources;
-        static ResourceLayout resourceLayout;
-        static Shader vertexShader;
-        static Shader fragmentShader;
         static Texture renderTexture;
-        static Pipeline pipeline;
         static ComputeUnit compUnit;
+        static VertFragUnit renderUnit;
+        static VertFragUnit debugUnit;
 
         static void Main(string[] args)
         {
             DateTime start = DateTime.Now;
             OctS[] model = Logic.MakeData(args[0]);
-            TimeSpan duration = DateTime.Now - start;
-            Console.WriteLine(duration);
+            Debug.WriteLine("Load time " + (DateTime.Now - start));
+
             window = Utilities.MakeWindow(720, 720);
-
-            Logic.ResetKeys();
-            window.KeyDown += Logic.KeyDown;
-            window.KeyUp += Logic.KeyUp;
-            window.MouseMove += (MouseMoveEventArgs mouseEvent) => {
-                if (mouseEvent.State.IsButtonDown(0)) {
-                    window.SetMousePosition(360, 360);
-                    if (Logic.mouseDown)
-                        Logic.MouseMove(mouseEvent.MousePosition - new Vector2(360, 360));
-                }
-                Logic.mouseDown = mouseEvent.State.IsButtonDown(0);
-            };
-
-            graphicsDevice = VeldridStartup.CreateGraphicsDevice(window);
-
-            CreateResources(model);
-
-            ImGui.CreateContext();
+            Logic.Init(window);
+            window.Resized += Resize;
 
             FPS fpsCounter = new FPS();
-            DateTime time = DateTime.Now;
+            device = VeldridStartup.CreateGraphicsDevice(window);
+            CreateResources(model);
+            DateTime time;
+            TimeSpan delta = TimeSpan.FromSeconds(0);
+            Logic.Heading = Logic.Heading;
+            Logic.Position = Logic.Position;
 
             while (window.Exists) {
-                window.PumpEvents();
-                Logic.Update(DateTime.Now - start);
+                delta = DateTime.Now - start;
                 start = DateTime.Now;
+
+                var input = window.PumpEvents();
+                Logic.Update(delta, input);
+                Logic.MakeGUI(fpsCounter.Frames);
                 Draw();
                 fpsCounter.Frame();
             }
@@ -80,84 +73,81 @@ namespace SDFbox
 
         static void Draw()
         {
-            window.PumpEvents();
-            window.PumpEvents((ref SDL_Event ev) => {
-                Console.WriteLine(ev.type);
-            });
+            device.UpdateBuffer(infoUBuffer, 0, Logic.State);
+            device.UpdateBuffer(drawUBuffer, 0, Logic.DrawState);
 
-            graphicsDevice.UpdateBuffer(infoUBuffer, 0, Logic.GetInfo);
             var cl = commandList;
             cl.Begin();
+
             compUnit.DispatchSized(cl, (uint) window.Width, (uint) window.Height, 1);
-            cl.End();
-            graphicsDevice.SubmitCommands(commandList);
 
-
-
-            cl.Begin();
-            cl.SetFramebuffer(graphicsDevice.SwapchainFramebuffer);
+            cl.SetFramebuffer(device.SwapchainFramebuffer);
             cl.SetFullViewports();
-
             cl.ClearColorTarget(0, RgbaFloat.Black);
+            renderUnit.Draw(cl, indexCount: 4, instanceCount: 1);
+            if (Logic.debugGizmos) {
+                device.UpdateBuffer(debugVertexBuffer, 0, Logic.DebugUtils);
+                debugUnit.Draw(cl, indexCount: 6, instanceCount: 1);
+            }
 
-            cl.SetPipeline(pipeline);
-            cl.SetGraphicsResourceSet(0, structuredResources);
-            cl.SetVertexBuffer(0, vertexBuffer);
-            cl.SetIndexBuffer(indexBuffer, IndexFormat.UInt16);
-            cl.DrawIndexed(
-                indexStart: 0,
-                indexCount: 4,
-                instanceStart: 0,
-                instanceCount: 1,
-                vertexOffset: 0);
-            cl.End();
-            graphicsDevice.SubmitCommands(commandList);
-            /*
-            cl.Begin();
-            cl.SetFramebuffer(graphicsDevice.MainSwapchain.Framebuffer);
-            _controller.Render(graphicsDevice, cl);
-            cl.End();
-            graphicsDevice.SubmitCommands(cl);//*/
+            imGuiRenderer.Render(device, commandList);
 
-            graphicsDevice.SwapBuffers(graphicsDevice.MainSwapchain);
-            graphicsDevice.SwapBuffers();
+            cl.End();
+            device.SubmitCommands(commandList);
+            device.SwapBuffers(device.MainSwapchain);
         }
 
 
         static void CreateResources(OctS[] octData)
         {
-            factory = graphicsDevice.ResourceFactory;
+            factory = device.ResourceFactory;
             Vertex[] quadVertices = Logic.ScreenQuads;
             ushort[] quadIndices = { 0, 1, 2, 3 };
+            Debug.WriteLine("Sizeof oct struct" + Marshal.SizeOf(octData[0]));
 
+            imGuiRenderer = new ImGuiRenderer(device,
+                device.SwapchainFramebuffer.OutputDescription, window.Width, window.Height);
 
-            vertexBuffer = MakeBuffer(quadVertices, BufferUsage.VertexBuffer);
-            indexBuffer = MakeBuffer(quadIndices, BufferUsage.IndexBuffer);
-
-            Console.WriteLine(Marshal.SizeOf(octData[0]));
-
+            quadVertexBuffer = MakeBuffer(quadVertices, BufferUsage.VertexBuffer);
             renderTexture = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
-            dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
             resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
-            infoUBuffer = MakeBuffer(Logic.GetInfo, BufferUsage.UniformBuffer);
+            drawUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
-            resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(new ResourceLayoutElementDescription[] {
-                new ResourceLayoutElementDescription("TB0", ResourceKind.TextureReadOnly, ShaderStages.Fragment)
-            }));
-            structuredResources = factory.CreateResourceSet(new ResourceSetDescription(resourceLayout, resultTBuffer));
+            var renderUdesc = new VertFragUnit.Description() {
+                Vertex = LoadShader(ShaderStages.Vertex),
+                Fragment = LoadShader("DisplayFrag", ShaderStages.Fragment),
+                VertexBuffer = quadVertexBuffer,
+                IndexBuffer = MakeBuffer(quadIndices, BufferUsage.IndexBuffer),
+                Topology = PrimitiveTopology.TriangleStrip,
+                Output = device.SwapchainFramebuffer.OutputDescription
+            };
+            renderUdesc.AddResource("TB0", ResourceKind.TextureReadOnly, resultTBuffer);
+            renderUdesc.AddResource("UB0", ResourceKind.UniformBuffer, drawUBuffer);
+            renderUnit = new VertFragUnit(factory, renderUdesc);
 
 
-            vertexShader = LoadShader(ShaderStages.Vertex);
-            fragmentShader = LoadShader("DisplayFrag", ShaderStages.Fragment);
+            dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
+            infoUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
-            MakePipeline();
-
-            var compUDesc = new ComputeUnit.Description(LoadShader(ShaderStages.Compute));
+            var compUDesc = new ComputeUnit.Description() { Shader = LoadShader(ShaderStages.Compute) };
             compUDesc.AddResource("SB0", ResourceKind.StructuredBufferReadOnly, dataSBuffer);
             compUDesc.AddResource("TB0", ResourceKind.TextureReadWrite, resultTBuffer);
             compUDesc.AddResource("UB0", ResourceKind.UniformBuffer, infoUBuffer);
-
             compUnit = new ComputeUnit(factory, compUDesc);
+
+
+            ushort[] debugIndices = { 0, 1, 2, 3, 4, 5 };
+            debugVertexBuffer = MakeBuffer(Logic.DebugUtils, BufferUsage.VertexBuffer);
+
+            var debugUDesc = new VertFragUnit.Description() {
+                Vertex = LoadShader(ShaderStages.Vertex),
+                Fragment = LoadShader("Plain", ShaderStages.Fragment),
+                VertexBuffer = debugVertexBuffer,
+                IndexBuffer = MakeBuffer(debugIndices, BufferUsage.IndexBuffer),
+                Topology = PrimitiveTopology.LineList,
+                Output = device.SwapchainFramebuffer.OutputDescription
+            };//*/
+            debugUnit = new VertFragUnit(factory, debugUDesc);
 
             commandList = factory.CreateCommandList();
         }
@@ -175,7 +165,7 @@ namespace SDFbox
             description = new BufferDescription(size, usage, structuredStride);
             DeviceBuffer newBuffer = factory.CreateBuffer(description);
 
-            graphicsDevice.UpdateBuffer(newBuffer, 0, data);
+            device.UpdateBuffer(newBuffer, 0, data);
             return newBuffer;
         }
         static DeviceBuffer MakeEmptyBuffer<T>(BufferUsage usage, uint count) where T : struct
@@ -212,7 +202,6 @@ namespace SDFbox
         public static Shader LoadShader(string name, ShaderStages stage)
         {
             string extension = GraphicsExtension();
-            Console.WriteLine(extension);
             string entryPoint = "";
             switch (stage) {
                 case ShaderStages.Vertex:
@@ -226,12 +215,14 @@ namespace SDFbox
                     break;
             }
             string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
+            Debug.WriteLine("Loading shader" + path);
             byte[] shaderBytes = File.ReadAllBytes(path);
-            return graphicsDevice.ResourceFactory.CreateShader(new ShaderDescription(stage, shaderBytes, entryPoint));
+            var desc = new ShaderDescription(stage, shaderBytes, entryPoint);
+            return factory.CreateShader(desc);
 
             string GraphicsExtension()
             {
-                switch (graphicsDevice.BackendType) {
+                switch (device.BackendType) {
                     case GraphicsBackend.Direct3D11:
                         return "hlsl";        // RUNTIME-COMPILE
                     case GraphicsBackend.Vulkan:
@@ -249,37 +240,39 @@ namespace SDFbox
             return LoadShader(stage.ToString(), stage);
         }
 
-        static void MakePipeline()
+        public static void ToggleFullscreen()
         {
-            GraphicsPipelineDescription pipelineDescription = new GraphicsPipelineDescription {
-                BlendState = BlendStateDescription.SingleOverrideBlend
-            };
-
-            Utilities.SetStencilState(pipelineDescription);
-            Utilities.SetRasterizerState(pipelineDescription);
-            // TODO: inline this v ^
-            pipelineDescription.PrimitiveTopology = PrimitiveTopology.TriangleStrip;
-            pipelineDescription.ResourceLayouts = new ResourceLayout[] { resourceLayout };
-            pipelineDescription.ShaderSet = Utilities.MakeShaderSet(vertexShader, fragmentShader);
-            pipelineDescription.Outputs = graphicsDevice.SwapchainFramebuffer.OutputDescription;
-
-            pipeline = factory.CreateGraphicsPipeline(pipelineDescription);
+            if (window.WindowState == WindowState.BorderlessFullScreen)
+                window.WindowState = WindowState.Normal;
+            else
+                window.WindowState = WindowState.BorderlessFullScreen;
         }
-
+        static void Resize()
+        {
+            imGuiRenderer.WindowResized(window.Width, window.Height);
+            device.MainSwapchain.Resize((uint) window.Width, (uint) window.Height);
+            renderTexture = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
+            resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
+            Logic.State.screen_size = ScreenSize;
+            renderUnit.UpdateResources(factory, new BindableResource[] { resultTBuffer, drawUBuffer });
+            compUnit.UpdateResources(factory, new BindableResource[] { dataSBuffer, resultTBuffer, infoUBuffer });
+        }
         static void DisposeResources()
         {
-            pipeline.Dispose();
-            vertexShader.Dispose();
-            fragmentShader.Dispose();
+            renderUnit.Dispose();
+            compUnit.Dispose();
+
             commandList.Dispose();
-            vertexBuffer.Dispose();
-            indexBuffer.Dispose();
-            graphicsDevice.Dispose();
+            device.Dispose();
         }
 
         public static Vector2 ScreenSize {
             get {
                 return new Vector2(window.Width, window.Height);
+            }
+            set {
+                window.Width = (int) value.X;
+                window.Height = (int) value.Y;
             }
         }
         public static uint Round(float val, int blocksize)
@@ -292,16 +285,16 @@ namespace SDFbox
 
     struct Vertex
     {
-        public Vector2 Position; // This is the position, in normalized device coordinates.
+        public Vector3 Position; // This is the position, in normalized device coordinates.
         public RgbaFloat Color; // This is the color of the vertex.
-        public Vertex(Vector2 position, RgbaFloat color)
+        public Vertex(RgbaFloat color, float x, float y, float z = 0)
         {
-            Position = position;
+            Position = new Vector3(x, y, z);
             Color = color;
         }
-        public Vertex(float x, float y, RgbaFloat color)
+        public Vertex(RgbaFloat color, double x, double y, double z)
         {
-            Position = new Vector2(x, y);
+            Position = new Vector3((float) x, (float) y, (float) z);
             Color = color;
         }
     }

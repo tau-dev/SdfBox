@@ -1,6 +1,6 @@
 struct VertexIn
 {
-    float2 Position : POSITION0;
+    float3 Position : POSITION0;
     float4 Color : COLOR0;
 };
 
@@ -13,7 +13,7 @@ struct FragmentIn
 FragmentIn VS(VertexIn input)
 {
     FragmentIn output;
-    output.Position = float4(input.Position, 0, 1);
+    output.Position = float4(input.Position, 1);
     output.Color = input.Color;
     return output;
 }

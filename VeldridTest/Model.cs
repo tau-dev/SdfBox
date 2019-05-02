@@ -201,7 +201,7 @@ namespace SDFbox
             }
         }
     }
-
+    // TODO  deprecate this
     [Serializable]
     class SaveModel
     {

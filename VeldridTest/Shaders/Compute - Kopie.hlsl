@@ -142,9 +142,9 @@ float3 ray(uint2 coord)
 	float3 dir = mul(float3(screendir, .5), inf.heading);
 	return normalize(dir);
 }
-void set(float4 value, uint2 coord)
+void set(float4 value, uint2 coord, int iter)
 {
-	tex[coord.xy] = value;//pow(value, 1 / 2.2);
+	tex[coord.xy] = float4(value, ((float)iter)/140);//pow(value, 1 / 2.2);
 }
 
 float2 box_intersect(Oct c, float3 pos, float3 dir)
@@ -176,7 +176,7 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	int i;
 	for (i = 0; prox > inf.margin; i++) {
 		if (!(i < 100 && dot(pos, pos) < inf.limit && abs(prox) > inf.margin)) {
-			set(float4(0.05, 0.1, 0.4, i), coord);
+			set(float3(0.05, 0.1, 0.4), coord, i);
 			return;
 		}
 		current = find(pos, current); //data[0];//find(pos);
@@ -205,13 +205,13 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
     }
 
 	prox = current.interpol_world(pos);
-	pos += dir * (prox - inf.margin);
+	pos += dir * prox * (1 + inf.margin);
 
 	dir = normalize(inf.light - pos);
 	pos += dir * inf.margin;
 	float angle = dot(dir, normalize(gradient(pos, current)));
 	if (angle < 0) {
-		set(float4(0, 0, 0, i), coord);
+		set(float3(0, 0, 0), coord, i);
 		return;
 	}
 	float dist = length(inf.light - pos);
@@ -220,7 +220,7 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	for (int j = 0; j < 40 && prox > -inf.margin; j++) {
 		if (dist < prox) {
 			float attenuation = angle / (lighting_dist*lighting_dist) * (exp2(inf.strength)- 1);
-			set(float4(attenuation, attenuation, attenuation, i+j), coord);
+			set(float3(attenuation, attenuation, attenuation), coord, i+j);
 			return;
 		}
 		current = find(pos, current); //data[0];//find(pos);
@@ -231,6 +231,6 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 		pos += dir * prox * (1 + inf.margin);
 		dist = length(inf.light - pos);
 	}
-	set(float4(0, 0, 0, 140), coord);
+	set(float3(0, 0, 0), coord, 140);
 	return;
 }

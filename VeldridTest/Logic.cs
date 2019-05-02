@@ -7,29 +7,74 @@ using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Veldrid;
+using Veldrid.Sdl2;
 
 namespace SDFbox
 {
-    using ModelValues = Dictionary<Int3, float>;
     class Logic
     {
         public const int xSize = 720;
         public const int ySize = 720;
         public static bool mouseDown = false;
         public const int GroupSize = 25;
+        public static bool debugGizmos = false;
+        public static bool debugWindow = false;
 
         const float mSpeed = 0.2f;
         const float tSpeed = 0.1f;
-        static int dataSize = 0;
-
-        static Vector2 heading = new Vector2(0, 0);
-        public static Vector3 position { get; private set; } = new Vector3(0.5f, 0.5f, 0.1f);
-        private static Matrix4x4 headingMat {
+        public static Info State = new Info() {
+            position = new Vector3(0.5f, 0.5f, 0.1f),
+            light = new Vector3(0f, 0f, 0f),
+            strength = .5f,
+            margin = 0.001f,
+            screen_size = new Vector2(xSize, ySize)
+        };
+        public static DrawInfo DrawState {
             get {
-                Matrix4x4 yaw = Matrix4x4.CreateRotationY(heading.Y);
-                Vector3 camXaxis = Vector3.Transform(new Vector3(1, 0, 0), yaw);
-                //Matrix4x4 pitch = Matrix4x4.CreateFromAxisAngle(camXaxis, heading.X);
-                return Matrix4x4.CreateFromYawPitchRoll(heading.Y, heading.X, 0);
+                return new DrawInfo() {
+                        showDebug = debugGizmos
+                    };
+            }
+        }
+
+
+        /*public static Info[] GetInfo {
+            get {
+                return new Info[] { new Info(new Float3x3(headingMat), position, dataSize) };
+            }
+        }*/
+
+        static Vector2 heading = Vector2.Zero;
+        public static Vector2 Heading {
+            get {
+                return heading;
+            }
+            set {
+                heading = value;
+                State.heading = new Float3x3(Matrix4x4.CreateFromYawPitchRoll(heading.Y, heading.X, 0));
+            }
+        }
+        public static Vector2 Look {
+            get {
+                Vector2 degree = heading / (2*(float) Math.PI) * 360;
+                return new Vector2(
+                    (float) Math.Round(((-degree.X + 90) % 360 + 360) % 360, 2),
+                    (float) Math.Round((degree.Y % 360 + 360) % 360, 2));
+            }
+        }
+        public static Vector3 Position {
+            get {
+                return State.position;
+            }
+            set {
+                State.position = value;
+                float furthest = 0;
+                for (int i = 0; i < 8; i++) {
+                    float distance = (SdfMath.split(i).Vector - State.position).LengthSquared();
+                    if (distance > furthest)
+                        furthest = distance;
+                }
+                State.limit = furthest;
             }
         }
         private static Matrix4x4 yawMat {
@@ -39,12 +84,6 @@ namespace SDFbox
         }
 
         private static Dictionary<Key, bool> pressed;
-
-        public static Info[] GetInfo {
-            get {
-                return new Info[] { new Info(new Float3x3(headingMat), position, dataSize) };
-            }
-        }
 
         public static OctS[] MakeData(string filename)
         {
@@ -82,72 +121,103 @@ namespace SDFbox
             } else
                 throw new ArgumentException("Invalid " + Path.GetExtension(filename) + "; can only read .obj or .asdf files.");
 
-            dataSize = data.Length;
+            State.buffer_size = data.Length;
             return data;
-
-            SaveModel tempMake()
-            {
-                SaveModel m = new SaveModel(new bool[] { false }, 1);
-                ModelValues layera = new ModelValues();
-                m.Add(SdfMath.split(0), 0, 0.8f);
-                m.Add(SdfMath.split(1), 0, 0.7f);
-                m.Add(SdfMath.split(2), 0, 0.8f);
-                m.Add(SdfMath.split(3), 0, 0.8f);
-                m.Add(SdfMath.split(4), 0, -0.2f);
-                m.Add(SdfMath.split(5), 0, -0.2f);
-                m.Add(SdfMath.split(6), 0, -0.2f);
-                m.Add(SdfMath.split(7), 0, 0.8f);
-                /*
-                for (int i = 0; i < 8; i++) {
-                    m.Add(Octree.split(i), 0, 1 - (float)i / 4);
-                }*/
-                return m;
-            }
         }
 
         public static Vertex[] ScreenQuads {
             get {
                 return new Vertex[] {
-                    new Vertex(-1f, 1f, RgbaFloat.Black),
-                    new Vertex(1f, 1f, RgbaFloat.Black),
-                    new Vertex(-1f, -1f, RgbaFloat.Black),
-                    new Vertex(1f, -1f, RgbaFloat.Black)
+                    new Vertex(RgbaFloat.Pink, -1, 1),
+                    new Vertex(RgbaFloat.Pink, 1, 1),
+                    new Vertex(RgbaFloat.Pink, -1, -1),
+                    new Vertex(RgbaFloat.Pink, 1, -1)
                 };
             }
         }
+        public static Vertex[] DebugUtils {
+            get {
+                var d = new Vertex[] {
+                    new Vertex(RgbaFloat.Red, 0, 0, 0),
+                    new Vertex(RgbaFloat.Red, .04, 0, 0),
+                    new Vertex(RgbaFloat.Green, 0, 0, 0),
+                    new Vertex(RgbaFloat.Green, 0, .04, 0),
+                    new Vertex(RgbaFloat.Blue, 0, 0, 0),
+                    new Vertex(RgbaFloat.Blue, 0, 0, .04),
 
+                    new Vertex(RgbaFloat.Red, .96, 1, 1),
+                    new Vertex(RgbaFloat.Red, 1, 1, 1),
+                    new Vertex(RgbaFloat.Green, 1, .96, 1),
+                    new Vertex(RgbaFloat.Green, 1, 1, 1),
+                    new Vertex(RgbaFloat.Blue, 1, 1, .96),
+                    new Vertex(RgbaFloat.Blue, 1, 1, 1)
+                };
+                for (int i = 0; i < 6; i++) {
+                    d[i].Position.Y *= -1;
+                    d[i].Position -= new Vector3(State.position.X, -State.position.Y, State.position.Z);
+                    d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(-heading.Y, 0, 0));
+                    d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(0, heading.X, 0));
+                    d[i].Position = new Vector3(d[i].Position.X / d[i].Position.Z, d[i].Position.Y / d[i].Position.Z, Math.Sign(d[i].Position.Z));
+                }
+                return d;
+            }
+        }
+
+        public static void Init(Sdl2Window window)
+        {
+            ResetKeys();
+            window.KeyDown += KeyDown;
+            window.KeyUp += KeyUp;
+
+            window.MouseMove += (MouseMoveEventArgs mouseEvent) => {
+                if (mouseEvent.State.IsButtonDown(0) && !ImGui.GetIO().WantCaptureMouse) {
+                    window.SetMousePosition(360, 360);
+                    window.CursorVisible = false;
+                    if (mouseDown)
+                        MouseMove(mouseEvent.MousePosition - new Vector2(360, 360));
+                } else
+                    window.CursorVisible = true;
+                mouseDown = mouseEvent.State.IsButtonDown(0);
+            };//*/
+        }
         public static void KeyDown(KeyEvent keyEvent)
         {
-            pressed[keyEvent.Key] = true;
+            if (!ImGui.GetIO().WantCaptureKeyboard) {
+                pressed[keyEvent.Key] = true;
+                if (keyEvent.Key == Key.F11)
+                    Program.ToggleFullscreen();
+            }
         }
         public static void KeyUp(KeyEvent keyEvent)
         {
             pressed[keyEvent.Key] = false;
         }
-        public static void Update(TimeSpan t)
+        public static void Update(TimeSpan t, InputSnapshot input)
         {
             float transform = mSpeed * (float) t.TotalSeconds;
             float rotate = tSpeed * (float) t.TotalSeconds;
             if (pressed[Key.Right])
-                heading.Y += rotate;
+                Heading += new Vector2(0, rotate);
             if (pressed[Key.Left])
-                heading.Y -= rotate;
+                Heading -= new Vector2(0, rotate);
             if (pressed[Key.Up])
-                heading.X += rotate;
+                Heading += new Vector2(rotate, 0);
             if (pressed[Key.Down])
-                heading.X -= rotate;
+                Heading -= new Vector2(rotate, 0);
             if (pressed[Key.W] || pressed[Key.Number8])
-                position += Vector3.Transform(new Vector3(0, 0, 1), yawMat) * transform;
+                Position += Vector3.Transform(new Vector3(0, 0, 1), yawMat) * transform;
             if (pressed[Key.S] || pressed[Key.Number2])
-                position += Vector3.Transform(new Vector3(0, 0, -1), yawMat) * transform;
+                Position += Vector3.Transform(new Vector3(0, 0, -1), yawMat) * transform;
             if (pressed[Key.D] || pressed[Key.Number6])
-                position += Vector3.Transform(new Vector3(1, 0, 0), yawMat) * transform;
+                Position += Vector3.Transform(new Vector3(1, 0, 0), yawMat) * transform;
             if (pressed[Key.A] || pressed[Key.Number4])
-                position += Vector3.Transform(new Vector3(-1, 0, 0), yawMat) * transform;
+                Position += Vector3.Transform(new Vector3(-1, 0, 0), yawMat) * transform;
             if (pressed[Key.LShift] || pressed[Key.Number9])
-                position += new Vector3(0, -1, 0) * transform;
+                Position += new Vector3(0, -1, 0) * transform;
             if (pressed[Key.LControl] || pressed[Key.Number3])
-                position += new Vector3(0, 1, 0) * transform;
+                Position += new Vector3(0, 1, 0) * transform;
+
+            Program.imGuiRenderer.Update((float) t.TotalSeconds, input);
         }
         public static void ResetKeys()
         {
@@ -165,49 +235,60 @@ namespace SDFbox
 
         public static void MouseMove(Vector2 diff)
         {
-            heading += new Vector2(-diff.Y, diff.X) / 512 * 4;
+            Heading += new Vector2(-diff.Y, diff.X) / 512 * 4;
         }
 
-        public static void MakeGUI()
+        public static void MakeGUI(int frames)
         {
-            ImGui.NewFrame();
-            ImGui.Begin("Debug", ImGuiWindowFlags.NoBackground);
-            ImGui.Button("Hello Mouse!");
-            ImGui.End();
-            ImGui.Render();
-            var data = ImGui.GetDrawData();
+            double milliPerFrame = Math.Round(1000.0/frames);
+            double area = Program.ScreenSize.X * Program.ScreenSize.Y;
+            double nanoPerPixel = Math.Round(1000000000.0 / frames / area);
+
+            if (ImGui.Begin("Debug", ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoBackground)) {
+                ImGui.Text($"Y rotation {Look.Y.ToString().PadLeft(6)}, X rotation {Look.X.ToString()}");
+                ImGui.Text($"{frames} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
+                ImGui.Text($"{Program.ScreenSize.X} x {Program.ScreenSize.Y} px");
+                ImGui.NextColumn();
+                
+                ImGui.SliderFloat("Light X", ref State.light.X, -1, 2);
+                ImGui.SliderFloat("Light Y", ref State.light.Y, -1, 2);
+                ImGui.SliderFloat("Light Z", ref State.light.Z, -1, 2);
+                ImGui.SliderFloat("Light Strength", ref State.strength, 0, 4);
+
+                ImGui.Checkbox("Show Debug Gizmos", ref debugGizmos);
+
+                if (Program.ScreenSize != new Vector2(720, 720)) {
+                    if (ImGui.Button("Reset to 720 x 720")) {
+                        Program.window.WindowState = WindowState.Normal;
+                        Program.ScreenSize = new Vector2(720, 720);
+                    }
+                }
+                if (Program.window.WindowState != WindowState.BorderlessFullScreen) {
+                    if (ImGui.Button("Fullscreen"))
+                        Program.window.WindowState = WindowState.BorderlessFullScreen;
+                }
+            }
+
             //data.CmdListsRange[0].CmdBuffer[0].
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 96)]
+    [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 112)]
     struct Info
     {
-        Float3x3 heading;
-        Vector3 position;
-        float margin;
-        Vector2 screen_size;
-        int buffer_size;
-        float limit;
-        Vector3 light;
-
-        public Info(Float3x3 heading, Vector3 position, int dataSize)
-        {
-            this.heading = heading;
-            this.position = position;
-            margin = 0.001f;
-            screen_size = Program.ScreenSize;
-            buffer_size = dataSize;
-
-            float furthest = 0;
-            for (int i = 0; i < 8; i++) {
-                float distance = (SdfMath.split(i).Vector - position).LengthSquared();
-                if (distance > furthest)
-                    furthest = distance;
-            }
-            limit = furthest + furthest;
-            light = new Vector3(0.5f, -2f, 2f);
-        }
+        public Float3x3 heading;
+        public Vector3 position;
+        public float margin;
+        public Vector2 screen_size;
+        public int buffer_size;
+        public float limit;
+        public Vector3 light;
+        public float strength;
+    }
+    [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 16)]
+    struct DrawInfo
+    {
+        public bool showDebug;
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 48)]

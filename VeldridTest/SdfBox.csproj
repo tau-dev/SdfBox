@@ -73,8 +73,8 @@
       <HintPath>..\packages\Microsoft.Win32.Primitives.4.3.0\lib\net46\Microsoft.Win32.Primitives.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="NativeLibraryLoader, Version=1.0.5.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\NativeLibraryLoader.1.0.5\lib\netstandard2.0\NativeLibraryLoader.dll</HintPath>
+    <Reference Include="NativeLibraryLoader, Version=1.0.10.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\NativeLibraryLoader.1.0.10\lib\netstandard2.0\NativeLibraryLoader.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=9.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.9.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
@@ -221,8 +221,26 @@
       <HintPath>..\packages\System.Xml.ReaderWriter.4.3.0\lib\net46\System.Xml.ReaderWriter.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="vk, Version=1.0.14.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Vk.1.0.14\lib\netstandard1.4\vk.dll</HintPath>
+    <Reference Include="Veldrid, Version=4.6.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Veldrid.4.6.1\lib\netstandard2.0\Veldrid.dll</HintPath>
+    </Reference>
+    <Reference Include="Veldrid.ImGui, Version=5.69.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Veldrid.ImGui.5.69.0\lib\netstandard2.0\Veldrid.ImGui.dll</HintPath>
+    </Reference>
+    <Reference Include="Veldrid.MetalBindings, Version=4.6.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Veldrid.MetalBindings.4.6.1\lib\netstandard2.0\Veldrid.MetalBindings.dll</HintPath>
+    </Reference>
+    <Reference Include="Veldrid.OpenGLBindings, Version=4.6.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Veldrid.OpenGLBindings.4.6.1\lib\netstandard2.0\Veldrid.OpenGLBindings.dll</HintPath>
+    </Reference>
+    <Reference Include="Veldrid.SDL2, Version=4.6.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Veldrid.SDL2.4.6.1\lib\netstandard2.0\Veldrid.SDL2.dll</HintPath>
+    </Reference>
+    <Reference Include="Veldrid.StartupUtilities, Version=4.6.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Veldrid.StartupUtilities.4.6.1\lib\netstandard2.0\Veldrid.StartupUtilities.dll</HintPath>
+    </Reference>
+    <Reference Include="vk, Version=1.0.21.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Vk.1.0.21\lib\netstandard1.4\vk.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -237,9 +255,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="dragonC.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="models\bunny.obj">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -262,18 +277,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="packages.config" />
-    <None Include="Shaders\compile-hlsl_Dist.cmd" />
     <None Include="Shaders\compile-hlsl.cmd" />
     <None Include="Shaders\compile-spirv.cmd" />
-    <None Include="Shaders\Compute.hlsl.bytes">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Shaders\DisplayFrag.hlsl.bytes">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Shaders\DistFind.hlsl.bytes">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="Shaders\Fragment.450.glsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -284,9 +289,6 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <EnableDebuggingInfo>True</EnableDebuggingInfo>
       <EntryPointName>FS</EntryPointName>
-    </None>
-    <None Include="Shaders\Fragment.hlsl.bytes">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Shaders\Fragment.metal">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -306,9 +308,6 @@
     <None Include="Shaders\Vertex.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Include="Shaders\Vertex.hlsl.bytes">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
     <None Include="Shaders\Vertex.metal">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -320,7 +319,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\VeldridContext\veldrid-master\src\Veldrid.SDL2\native\win-x86\SDL2.dll">
+    <Content Include="..\..\..\..\.nuget\packages\veldrid.sdl2\4.5.0\runtimes\win-x64\native\SDL2.dll">
       <Link>SDL2.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -330,6 +329,9 @@
     <Content Include="Shaders\Compute.hlsl">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <None Include="Shaders\Plain.hlsl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <Content Include="StanDragon96.ico" />
     <None Include="Shaders\DistFind.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -339,18 +341,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\Downloads\veldrid-master\src\Veldrid.SDL2\Veldrid.SDL2.csproj">
-      <Project>{8b11c7c1-ea56-4449-b7a4-ecbb17d566c3}</Project>
-      <Name>Veldrid.SDL2</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\Downloads\veldrid-master\src\Veldrid.StartupUtilities\Veldrid.StartupUtilities.csproj">
-      <Project>{a2da940f-f006-42ad-b4aa-50766b32a9ea}</Project>
-      <Name>Veldrid.StartupUtilities</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\..\Downloads\veldrid-master\src\Veldrid\Veldrid.csproj">
-      <Project>{60d56e4a-fa7a-4664-bef0-0a29f41518bf}</Project>
-      <Name>Veldrid</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Converter\Converter.csproj">
       <Project>{27f45aed-91fa-4034-b9d4-dd4b51866c45}</Project>
       <Name>Converter</Name>
@@ -375,11 +365,15 @@
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('..\packages\Microsoft.HLSL.CSharpVB.1.0.1\build\Microsoft.HLSL.CSharpVB.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.HLSL.CSharpVB.1.0.1\build\Microsoft.HLSL.CSharpVB.targets'))" />
+    <Error Condition="!Exists('..\packages\Veldrid.SDL2.4.5.0\build\net40\Veldrid.SDL2.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Veldrid.SDL2.4.5.0\build\net40\Veldrid.SDL2.targets'))" />
+    <Error Condition="!Exists('..\packages\Veldrid.SDL2.4.6.1\build\net40\Veldrid.SDL2.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Veldrid.SDL2.4.6.1\build\net40\Veldrid.SDL2.targets'))" />
     <Error Condition="!Exists('..\packages\ImGui.NET.1.69.0\build\net40\ImGui.NET.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\ImGui.NET.1.69.0\build\net40\ImGui.NET.targets'))" />
   </Target>
   <PropertyGroup>
     <PreBuildEvent>
     </PreBuildEvent>
   </PropertyGroup>
+  <Import Project="..\packages\Veldrid.SDL2.4.5.0\build\net40\Veldrid.SDL2.targets" Condition="Exists('..\packages\Veldrid.SDL2.4.5.0\build\net40\Veldrid.SDL2.targets')" />
+  <Import Project="..\packages\Veldrid.SDL2.4.6.1\build\net40\Veldrid.SDL2.targets" Condition="Exists('..\packages\Veldrid.SDL2.4.6.1\build\net40\Veldrid.SDL2.targets')" />
   <Import Project="..\packages\ImGui.NET.1.69.0\build\net40\ImGui.NET.targets" Condition="Exists('..\packages\ImGui.NET.1.69.0\build\net40\ImGui.NET.targets')" />
 </Project>

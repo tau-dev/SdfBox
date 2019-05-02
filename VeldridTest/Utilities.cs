@@ -1,5 +1,4 @@
 ﻿
-using Converter;
 using System;
 using System.Collections.Generic;
 using System.Timers;
@@ -13,46 +12,10 @@ namespace SDFbox
     {
         public static Sdl2Window MakeWindow(int width, int height)
         {
-            WindowCreateInfo windowCI = new WindowCreateInfo() {
-                X = 512,
-                Y = 32,
-                WindowWidth = width,
-                WindowHeight = height,
-                WindowTitle = "SDFbox",
-            };
-            Sdl2Window window = VeldridStartup.CreateWindow(ref windowCI);
-            window.CursorVisible = false;
-
+            Sdl2Window window = VeldridStartup.CreateWindow(
+                new WindowCreateInfo(512, 32, width, height, WindowState.Minimized, "SDFbox"));
+            //window.CursorVisible = false;
             return window;
-        }
-
-        public static void SetStencilState(GraphicsPipelineDescription pipelineDescription,
-            bool depthTest = true, bool depthWrite = true,
-            ComparisonKind comparison = ComparisonKind.LessEqual)
-        {
-            pipelineDescription.DepthStencilState = new DepthStencilStateDescription(
-                depthTestEnabled: depthTest,
-                depthWriteEnabled: depthWrite,
-                comparisonKind: comparison);
-        }
-
-        public static void SetRasterizerState(GraphicsPipelineDescription pipelineDescription,
-            FaceCullMode faceCull = FaceCullMode.Back,
-            PolygonFillMode polygonFill = PolygonFillMode.Solid,
-            FrontFace front = FrontFace.Clockwise,
-            bool depthClip = true, bool scissorTest = false)
-        {
-            pipelineDescription.RasterizerState = new RasterizerStateDescription(
-                cullMode: faceCull,
-                fillMode: polygonFill,
-                frontFace: front,
-                depthClipEnabled: depthClip,
-                scissorTestEnabled: scissorTest);
-        }
-
-        internal static Octree Convert(VertexModel vmodel)
-        {
-            throw new NotImplementedException();
         }
 
         public static ShaderSetDescription MakeShaderSet(Shader vertexShader, Shader fragmentShader)
@@ -65,32 +28,73 @@ namespace SDFbox
         static VertexLayoutDescription LayoutDescription()
         {
             return (new VertexLayoutDescription(
-            new VertexElementDescription("Position", VertexElementSemantic.Position, VertexElementFormat.Float2),
+            new VertexElementDescription("Position", VertexElementSemantic.Position, VertexElementFormat.Float3),
             new VertexElementDescription("Color", VertexElementSemantic.Color, VertexElementFormat.Float4)));
         }
     }
 
-    class ComputeUnit
+    abstract internal class RenderUnit : IDisposable
+    {
+        protected readonly ResourceLayout Layout;
+        protected ResourceSet ResourceSet;
+        protected BindableResource[] Resources;
+        protected Pipeline Pipeline;
+
+        public RenderUnit(ResourceFactory factory, Description d)
+        {
+            Layout = factory.CreateResourceLayout(d.LayoutDescription);
+            ResourceSet = factory.CreateResourceSet(d.ResourceDescription(Layout));
+        }
+        public void UpdateResources(ResourceFactory f, BindableResource[] newResources)
+        {
+            ResourceSet = f.CreateResourceSet(new ResourceSetDescription(Layout, newResources));
+        }
+
+        public virtual void Dispose()
+        {
+            Layout.Dispose();
+            ResourceSet.Dispose();
+            Pipeline.Dispose();
+        }
+
+        public class Description
+        {
+            List<ResourceLayoutElementDescription> LayoutElements = new List<ResourceLayoutElementDescription>();
+            List<BindableResource> ResourceElements = new List<BindableResource>();
+            public ResourceLayoutDescription LayoutDescription => new ResourceLayoutDescription(LayoutElements.ToArray());
+
+            public ResourceSetDescription ResourceDescription(ResourceLayout layout)
+            {
+                return new ResourceSetDescription(layout, ResourceElements.ToArray());
+            }
+
+            protected void AddResource(string name, ResourceKind kind, BindableResource resource, ShaderStages stage)
+            {
+                LayoutElements.Add(new ResourceLayoutElementDescription(name, kind, stage));
+                ResourceElements.Add(resource);
+            }
+        }
+    }
+
+    class ComputeUnit : RenderUnit
     {
         public Shader Shader { get; }
-        public Pipeline Pipeline { get; }
-        ResourceLayout Layout;
-        ResourceSet Resources;
-        uint xGroupSize = 25;
-        uint yGroupSize = 25;
-        uint zGroupSize = 1;
+        public uint xGroupSize { get; }
+        public uint yGroupSize { get; }
+        public uint zGroupSize { get; }
 
-        public ComputeUnit(ResourceFactory factory, Description d)
+        public ComputeUnit(ResourceFactory factory, Description d) : base(factory, d)
         {
-            this.Shader = d.Shader;
+            Shader = d.Shader;
+            xGroupSize = d.xGroupSize;
+            yGroupSize = d.yGroupSize;
+            zGroupSize = d.zGroupSize;
 
-            Layout = factory.CreateResourceLayout(d.LayoutDescription);
-            Resources = factory.CreateResourceSet(d.ResourceDescription(Layout));
             ComputePipelineDescription pipelineDescription = new ComputePipelineDescription {
                 ResourceLayouts = new ResourceLayout[] { Layout },
                 ComputeShader = Shader,
-                ThreadGroupSizeX = 32,
-                ThreadGroupSizeY = 32
+                ThreadGroupSizeX = 25,
+                ThreadGroupSizeY = 25
             };
             pipelineDescription.ThreadGroupSizeX = 1;
 
@@ -99,7 +103,7 @@ namespace SDFbox
         public void Dispatch(CommandList cl, uint x, uint y, uint z)
         {
             cl.SetPipeline(Pipeline);
-            cl.SetComputeResourceSet(0, Resources);
+            cl.SetComputeResourceSet(0, ResourceSet);
             cl.Dispatch(x, y, z);
         }
         public void DispatchSized(CommandList cl, uint x, uint y, uint z)
@@ -110,27 +114,96 @@ namespace SDFbox
                 (z + zGroupSize - 1) / zGroupSize);
         }
 
-        public class Description
+        public new void Dispose()
+        {
+            Shader.Dispose();
+            base.Dispose();
+        }
+
+        public new class Description : RenderUnit.Description
         {
             public Shader Shader;
-            List<ResourceLayoutElementDescription> LayoutElements = new List<ResourceLayoutElementDescription>();
-            List<BindableResource> ResourceElements = new List<BindableResource>();
-
-            public ResourceLayoutDescription LayoutDescription => new ResourceLayoutDescription(LayoutElements.ToArray());
-
-            public ResourceSetDescription ResourceDescription(ResourceLayout layout)
-            {
-                return new ResourceSetDescription(layout, ResourceElements.ToArray());
-            }
-
-            public Description(Shader s)
-            {
-                Shader = s;
-            }
+            public uint xGroupSize = 25;
+            public uint yGroupSize = 25;
+            public uint zGroupSize = 1;
             public void AddResource(string name, ResourceKind kind, BindableResource resource)
             {
-                LayoutElements.Add(new ResourceLayoutElementDescription(name, kind, ShaderStages.Compute));
-                ResourceElements.Add(resource);
+                AddResource(name, kind, resource, ShaderStages.Compute);
+            }
+        }
+    }
+
+    class VertFragUnit : RenderUnit
+    {
+        Shader Vertex;
+        Shader Fragment;
+        DeviceBuffer VertexBuffer;
+        DeviceBuffer IndexBuffer;
+
+        public VertFragUnit(ResourceFactory factory, Description d) : base(factory, d)
+        {
+            Vertex = d.Vertex;
+            Fragment = d.Fragment;
+            VertexBuffer = d.VertexBuffer;
+            IndexBuffer = d.IndexBuffer;
+
+            GraphicsPipelineDescription pipelineDescription = new GraphicsPipelineDescription {
+                BlendState = d.BlendState,
+                PrimitiveTopology = d.Topology,
+                ResourceLayouts = new ResourceLayout[] { Layout },
+                ShaderSet = Utilities.MakeShaderSet(Vertex, Fragment),
+                Outputs = d.Output,
+                DepthStencilState = d.DepthStencil,
+                RasterizerState = d.RasterizerState
+            };
+
+            Pipeline = factory.CreateGraphicsPipeline(pipelineDescription);
+        }
+        public void Draw(CommandList cl, uint indexCount, uint instanceCount, int vertexOffset = 0)
+        {
+            cl.SetPipeline(Pipeline);
+            cl.SetGraphicsResourceSet(0, ResourceSet);
+            cl.SetVertexBuffer(0, VertexBuffer);
+            cl.SetIndexBuffer(IndexBuffer, IndexFormat.UInt16);
+            cl.DrawIndexed(
+                indexStart: 0,
+                indexCount: indexCount,
+                instanceStart: 0,
+                instanceCount: instanceCount,
+                vertexOffset: vertexOffset);
+        }
+
+        public new void Dispose()
+        {
+            Vertex.Dispose();
+            Fragment.Dispose();
+            VertexBuffer.Dispose();
+            IndexBuffer.Dispose();
+            base.Dispose();
+        }
+
+        public new class Description : RenderUnit.Description
+        {
+            public Shader Vertex;
+            public Shader Fragment;
+            public DeviceBuffer VertexBuffer;
+            public DeviceBuffer IndexBuffer;
+            public OutputDescription Output;
+            public PrimitiveTopology Topology;
+            public BlendStateDescription BlendState = BlendStateDescription.SingleOverrideBlend;
+            public DepthStencilStateDescription DepthStencil = new DepthStencilStateDescription(
+                depthTestEnabled: true,
+                depthWriteEnabled: true,
+                comparisonKind: ComparisonKind.LessEqual);
+            public RasterizerStateDescription RasterizerState = new RasterizerStateDescription(
+                cullMode: FaceCullMode.Back,
+                fillMode: PolygonFillMode.Solid,
+                frontFace: FrontFace.Clockwise,
+                depthClipEnabled: true,
+                scissorTestEnabled: false);
+            public new void AddResource(string name, ResourceKind kind, BindableResource resource, ShaderStages stage = ShaderStages.Fragment)
+            {
+                base.AddResource(name, kind, resource, stage);
             }
         }
     }
@@ -139,6 +212,12 @@ namespace SDFbox
     {
         Timer secondTimer;
         int frame = 0;
+        int lastframe = 0;
+        public int Frames {
+            get {
+                return lastframe;
+            }
+        }
         public FPS()
         {
             secondTimer = new Timer(1000);
@@ -158,15 +237,7 @@ namespace SDFbox
 
         void Sec(Object source, ElapsedEventArgs e)
         {
-            Console.Clear();
-            if (frame == 0)
-                Console.WriteLine("No frames in this second");
-            else {
-                Console.WriteLine(1000 / frame + " mspf - " + frame + "fps");
-                Console.WriteLine(Math.Round(Logic.position.X, 2));
-                Console.WriteLine(Math.Round(Logic.position.Y, 2));
-                Console.WriteLine(Math.Round(Logic.position.Z, 2));
-            }
+            lastframe = frame;
             frame = 0;
         }
     }

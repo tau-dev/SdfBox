@@ -7,12 +7,18 @@ struct FragmentIn
 };
 
 Texture2D image : register(t0);
-
+cbuffer B : register(b0)
+{
+	bool debug;
+}
 SamplerState imageSampler;
 
 float4 FS(FragmentIn input) : SV_Target0
 {
 	uint2 dimensions;
 	image.GetDimensions(dimensions.x,dimensions.y);
-	return image.Sample(imageSampler, input.Position.xy/dimensions);
+	float4 val = image.Sample(imageSampler, input.Position.xy/dimensions);
+	if(debug)
+		val += float4(1, -1, -1, 0) * val.w / 140;
+	return val;
 }
