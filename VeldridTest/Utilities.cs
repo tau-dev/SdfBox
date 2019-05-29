@@ -39,15 +39,37 @@ namespace SDFbox
         protected ResourceSet ResourceSet;
         protected BindableResource[] Resources;
         protected Pipeline Pipeline;
+        protected Dictionary<string, int> ResourceNames;
 
         public RenderUnit(ResourceFactory factory, Description d)
         {
             Layout = factory.CreateResourceLayout(d.LayoutDescription);
-            ResourceSet = factory.CreateResourceSet(d.ResourceDescription(Layout));
+            Resources = d.ResourceElements.ToArray();
+            ResourceNames = d.ResourceNames;
+            Update(factory);
+        }
+        public BindableResource this[string s] {
+            get {
+                return Resources[ResourceNames[s]];
+            }
+            set {
+                if (!ResourceNames.ContainsKey(s))
+                    throw new FieldAccessException();
+                else
+                    Resources[ResourceNames[s]] = value;
+            }
+        }
+        public DeviceBuffer Buffer(string s)
+        {
+            return (DeviceBuffer) Resources[ResourceNames[s]];
         }
         public void UpdateResources(ResourceFactory f, BindableResource[] newResources)
         {
             ResourceSet = f.CreateResourceSet(new ResourceSetDescription(Layout, newResources));
+        }
+        public void Update(ResourceFactory f)
+        {
+            ResourceSet = f.CreateResourceSet(new ResourceSetDescription(Layout, Resources));
         }
 
         public virtual void Dispose()
@@ -60,18 +82,15 @@ namespace SDFbox
         public class Description
         {
             List<ResourceLayoutElementDescription> LayoutElements = new List<ResourceLayoutElementDescription>();
-            List<BindableResource> ResourceElements = new List<BindableResource>();
+            public List<BindableResource> ResourceElements = new List<BindableResource>();
+            public Dictionary<string, int> ResourceNames = new Dictionary<string, int>();
             public ResourceLayoutDescription LayoutDescription => new ResourceLayoutDescription(LayoutElements.ToArray());
-
-            public ResourceSetDescription ResourceDescription(ResourceLayout layout)
-            {
-                return new ResourceSetDescription(layout, ResourceElements.ToArray());
-            }
 
             protected void AddResource(string name, ResourceKind kind, BindableResource resource, ShaderStages stage)
             {
                 LayoutElements.Add(new ResourceLayoutElementDescription(name, kind, stage));
                 ResourceElements.Add(resource);
+                ResourceNames[name] = ResourceElements.Count - 1;
             }
         }
     }
@@ -126,6 +145,12 @@ namespace SDFbox
             public uint xGroupSize = 25;
             public uint yGroupSize = 25;
             public uint zGroupSize = 1;
+
+            public Description(Shader s)
+            {
+                Shader = s;
+            }
+
             public void AddResource(string name, ResourceKind kind, BindableResource resource)
             {
                 AddResource(name, kind, resource, ShaderStages.Compute);
@@ -137,8 +162,8 @@ namespace SDFbox
     {
         Shader Vertex;
         Shader Fragment;
-        DeviceBuffer VertexBuffer;
-        DeviceBuffer IndexBuffer;
+        public DeviceBuffer VertexBuffer { get; private set; }
+        public DeviceBuffer IndexBuffer { get; private set; }
 
         public VertFragUnit(ResourceFactory factory, Description d) : base(factory, d)
         {

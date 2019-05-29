@@ -12,10 +12,11 @@ namespace SDFbox
         public Octree Tree { get; }
         public Vector3 Position;
         Matrix4x4 Rotation;
-        SaveModel save;
+        //SaveModel save;
         const float HalfSqrt3 = 0.866025f;
-        const float precision = 0.002f;
-        const float maxResolution = 0.004f;
+        public static float precision = 0.002f;
+        public static int MaxDepth = 4;
+        //public static float maxResolution = 0.004f;
 
         public Model(Octree c)
         {
@@ -25,7 +26,7 @@ namespace SDFbox
         {
             Tree = Octree.Load(c, 0);
         }
-        public Model(SaveModel model)
+        /*public Model(SaveModel model)
         {
             save = model;
             Tree = construct(new Queue<bool>(save.Hierachy));
@@ -43,27 +44,28 @@ namespace SDFbox
                     return new Octree(children);
                 }
             }
-        }
+        }*/
         public Model(VertexModel vmodel)// : this(Utilities.Convert(vmodel))
         {
-            Tree = construct(vmodel, 1, Vector3.Zero, vmodel.All());
+            Tree = construct(vmodel, 0, Vector3.Zero, vmodel.All());
 
-            Octree construct(VertexModel vm, float scale, Vector3 pos, List<int> possible)
+            Octree construct(VertexModel vm, int depth, Vector3 pos, List<int> possible)
             {
+                float scale = (float) Math.Pow(0.5, depth);
                 float[] verts = new float[8];
                 Vector3 center = pos + Vector3.One * 0.5f * scale;
                 float centerValue = vm.DistanceAt(center, possible);
-                possible = vm.GetPossible(center, Math.Abs(centerValue) + HalfSqrt3 * scale, possible);
+                possible = vm.GetPossible(center, HalfSqrt3 * scale, possible);
                 for (int i = 0; i < 8; i++) {
                     verts[i] = vm.DistanceAt(pos + SdfMath.split(i).Vector * scale, possible);
                 }
                 Octree build = new Octree(verts);
 
 
-                if (centerValue < scale && scale > maxResolution) { // error(centerValue, build.Vertices, pos) > precision
+                if (Math.Abs(centerValue) < scale * 2 && depth < MaxDepth) { // error(centerValue, build.Vertices, pos) > precision
                     Octree[] children = new Octree[8];
                     for (int i = 0; i < 8; i++) {
-                        children[i] = construct(vm, scale / 2, pos + SdfMath.split(i).Vector * scale / 2, possible);
+                        children[i] = construct(vm, depth + 1, pos + SdfMath.split(i).Vector * scale / 2, possible);
                     }
                     build.Children = children;
                 }
@@ -77,27 +79,41 @@ namespace SDFbox
             }
         }
 
-        public static SaveModel Build()
+        public static float Sample(OctS[] sdf, Vector3 pos)
         {
-            //bool[] structure = new bool[] { true, false, false, false, false, false, false, false, false };
-            bool[] structure = new bool[] { true, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false };
-            SaveModel b = new SaveModel(structure, 1);
-
-            for (int i = 0; i < 125; i++) {
-                int X = i % 5;
-                int Y = i / 5 % 5;
-                int Z = i / 25 % 5;
-                b.Add(X, Y, Z, 1, SDFunction(new Vector3(X/4f, Y/4f, Z/4f)));
+            int p = 0;
+            while (sdf[p].children.X != -1) {
+                Vector3 direction = pos - (sdf[p].lower + sdf[p].higher) / 2;
+                int delta = 0;
+                if (direction.X > 0)
+                    delta = 1;
+                if (direction.Y > 0)
+                    delta += 2;
+                if (direction.Z > 0)
+                    delta += 4;
+                p = sdf[p].children.Array[delta];
             }
-            return b;
-
-            float SDFunction(Vector3 pos)
-            {
-                Vector3 centre = new Vector3(.5f, .5f, 1f);
-                return (centre - pos).Length() - .32f;
-            }
+            OctS found = sdf[p];
+            return SdfMath.Lerp3(found.verts, (pos - found.lower) / (found.lower + found.higher));
         }
-
+        public static List<int> PathTo(OctS[] sdf, Vector3 pos)
+        {
+            List<int> path = new List<int>();
+            int p = 0;
+            while (sdf[p].children.X != -1) {
+                Vector3 direction = pos - (sdf[p].lower + sdf[p].higher) / 2;
+                int delta = 0;
+                if (direction.X > 0)
+                    delta = 1;
+                if (direction.Y > 0)
+                    delta += 2;
+                if (direction.Z > 0)
+                    delta += 4;
+                path.Add(delta);
+                p = sdf[p].children.Array[delta];
+            }
+            return path;
+        }
         public OctS[] Cast()
         {
             return Tree.Cast();
@@ -140,7 +156,7 @@ namespace SDFbox
             }
         }
 
-        internal void Init(SaveModel data, Int3 pos, int level)
+        /*internal void Init(SaveModel data, Int3 pos, int level)
         {
             Vertices = new float[8];
 
@@ -153,7 +169,7 @@ namespace SDFbox
                     Children[i].Init(data, pos * 2 + SdfMath.split(i), level + 1);
                 }
             }
-        }
+        }//*/
 
         public static Octree Load(OctS[] raw, int position)
         {
@@ -202,6 +218,7 @@ namespace SDFbox
         }
     }
     // TODO  deprecate this
+    /*
     [Serializable]
     class SaveModel
     {
@@ -244,7 +261,7 @@ namespace SDFbox
             }
             return s;
         }
-    }
+    }*/
 
     struct Int3
     {

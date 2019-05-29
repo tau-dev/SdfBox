@@ -16,6 +16,7 @@ using System.Runtime.InteropServices;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
+using Generator;
 
 namespace SDFbox
 {
@@ -26,33 +27,25 @@ namespace SDFbox
         public static GraphicsDevice device;
         public static ResourceFactory factory;
         public static ImGuiRenderer imGuiRenderer;
-        static CommandList commandList;
-        static DeviceBuffer quadVertexBuffer;
-        static DeviceBuffer debugVertexBuffer;
+        public static CommandList commandList;
 
-        static DeviceBuffer dataSBuffer;
-        static DeviceBuffer infoUBuffer;
-        static DeviceBuffer drawUBuffer;
-        static TextureView resultTBuffer;
+        public static OctS[] model;
         static Texture renderTexture;
-        static ComputeUnit compUnit;
-        static VertFragUnit renderUnit;
-        static VertFragUnit debugUnit;
+
+        static ComputeUnit compute;
+        static VertFragUnit renderer;
+        static VertFragUnit uiRenderer;
 
         static void Main(string[] args)
         {
-            DateTime start = DateTime.Now;
-            OctS[] model = Logic.MakeData(args[0]);
-            Debug.WriteLine("Load time " + (DateTime.Now - start));
-
             window = Utilities.MakeWindow(720, 720);
             Logic.Init(window);
             window.Resized += Resize;
 
             FPS fpsCounter = new FPS();
             device = VeldridStartup.CreateGraphicsDevice(window);
-            CreateResources(model);
-            DateTime time;
+            CreateResources(args[0]);
+            DateTime start = DateTime.Now;
             TimeSpan delta = TimeSpan.FromSeconds(0);
             Logic.Heading = Logic.Heading;
             Logic.Position = Logic.Position;
@@ -73,21 +66,29 @@ namespace SDFbox
 
         static void Draw()
         {
-            device.UpdateBuffer(infoUBuffer, 0, Logic.State);
-            device.UpdateBuffer(drawUBuffer, 0, Logic.DrawState);
+            device.UpdateBuffer(compute.Buffer("UB0"), 0, Logic.State);
+            device.UpdateBuffer(renderer.Buffer("UB0"), 0, Logic.DrawState);
 
             var cl = commandList;
+            /*
+                if (Generator.GpuGenerator.compute != null)
+                Generator.GpuGenerator.DistanceAt(Logic.State.position); 39712
+                var gcmp = GpuGenerator.compute;
+                device.UpdateBuffer(gcmp.Buffer("UB0"), 0, new Vector4(0, 0, 0, 0));
+                gcmp.Update(factory);
+            */
+
             cl.Begin();
 
-            compUnit.DispatchSized(cl, (uint) window.Width, (uint) window.Height, 1);
+            compute.DispatchSized(cl, (uint) window.Width, (uint) window.Height, 1);
 
             cl.SetFramebuffer(device.SwapchainFramebuffer);
             cl.SetFullViewports();
             cl.ClearColorTarget(0, RgbaFloat.Black);
-            renderUnit.Draw(cl, indexCount: 4, instanceCount: 1);
+            renderer.Draw(cl, indexCount: 4, instanceCount: 1);
             if (Logic.debugGizmos) {
-                device.UpdateBuffer(debugVertexBuffer, 0, Logic.DebugUtils);
-                debugUnit.Draw(cl, indexCount: 6, instanceCount: 1);
+                device.UpdateBuffer(uiRenderer.VertexBuffer, 0, Logic.DebugUtils);
+                uiRenderer.Draw(cl, indexCount: 6, instanceCount: 1);
             }
 
             imGuiRenderer.Render(device, commandList);
@@ -98,58 +99,66 @@ namespace SDFbox
         }
 
 
-        static void CreateResources(OctS[] octData)
+        static void CreateResources(string path)
         {
             factory = device.ResourceFactory;
+            commandList = factory.CreateCommandList();
             Vertex[] quadVertices = Logic.ScreenQuads;
             ushort[] quadIndices = { 0, 1, 2, 3 };
-            Debug.WriteLine("Sizeof oct struct" + Marshal.SizeOf(octData[0]));
 
             imGuiRenderer = new ImGuiRenderer(device,
                 device.SwapchainFramebuffer.OutputDescription, window.Width, window.Height);
 
-            quadVertexBuffer = MakeBuffer(quadVertices, BufferUsage.VertexBuffer);
-            renderTexture = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
-            resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
-            drawUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
+            renderTexture = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));//var resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
+            var drawUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
-            var renderUdesc = new VertFragUnit.Description() {
+            var renderDesc = new VertFragUnit.Description() {
                 Vertex = LoadShader(ShaderStages.Vertex),
                 Fragment = LoadShader("DisplayFrag", ShaderStages.Fragment),
-                VertexBuffer = quadVertexBuffer,
+
+                VertexBuffer = MakeBuffer(quadVertices, BufferUsage.VertexBuffer),
                 IndexBuffer = MakeBuffer(quadIndices, BufferUsage.IndexBuffer),
                 Topology = PrimitiveTopology.TriangleStrip,
                 Output = device.SwapchainFramebuffer.OutputDescription
             };
-            renderUdesc.AddResource("TB0", ResourceKind.TextureReadOnly, resultTBuffer);
-            renderUdesc.AddResource("UB0", ResourceKind.UniformBuffer, drawUBuffer);
-            renderUnit = new VertFragUnit(factory, renderUdesc);
+            renderDesc.AddResource("TB0", ResourceKind.TextureReadOnly, renderTexture);
+            renderDesc.AddResource("UB0", ResourceKind.UniformBuffer, drawUBuffer);
+            renderer = new VertFragUnit(factory, renderDesc);
 
+            var dataSBuffer = LoadFile(path);
+            var infoUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
-            dataSBuffer = MakeBuffer(octData, BufferUsage.StructuredBufferReadOnly);
-            infoUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
+            var compDesc = new ComputeUnit.Description(LoadShader(ShaderStages.Compute));
 
-            var compUDesc = new ComputeUnit.Description() { Shader = LoadShader(ShaderStages.Compute) };
-            compUDesc.AddResource("SB0", ResourceKind.StructuredBufferReadOnly, dataSBuffer);
-            compUDesc.AddResource("TB0", ResourceKind.TextureReadWrite, resultTBuffer);
-            compUDesc.AddResource("UB0", ResourceKind.UniformBuffer, infoUBuffer);
-            compUnit = new ComputeUnit(factory, compUDesc);
+            compDesc.AddResource("SB0", ResourceKind.StructuredBufferReadOnly, dataSBuffer);
+            compDesc.AddResource("TB0", ResourceKind.TextureReadWrite, renderTexture);
+            compDesc.AddResource("UB0", ResourceKind.UniformBuffer, infoUBuffer);
+            compute = new ComputeUnit(factory, compDesc);
 
 
             ushort[] debugIndices = { 0, 1, 2, 3, 4, 5 };
-            debugVertexBuffer = MakeBuffer(Logic.DebugUtils, BufferUsage.VertexBuffer);
 
-            var debugUDesc = new VertFragUnit.Description() {
+            var uiDesc = new VertFragUnit.Description() {
                 Vertex = LoadShader(ShaderStages.Vertex),
                 Fragment = LoadShader("Plain", ShaderStages.Fragment),
-                VertexBuffer = debugVertexBuffer,
+                VertexBuffer = MakeBuffer(Logic.DebugUtils, BufferUsage.VertexBuffer),
                 IndexBuffer = MakeBuffer(debugIndices, BufferUsage.IndexBuffer),
                 Topology = PrimitiveTopology.LineList,
                 Output = device.SwapchainFramebuffer.OutputDescription
             };//*/
-            debugUnit = new VertFragUnit(factory, debugUDesc);
-
-            commandList = factory.CreateCommandList();
+            uiRenderer = new VertFragUnit(factory, uiDesc);
+        }
+        public static void Load(string path)
+        {
+            compute["SB0"] = LoadFile(path);
+            compute.Update(factory);
+            //compUnit.UpdateResources(factory, new BindableResource[] { dataSBuffer, resultTBuffer, infoUBuffer });
+        }
+        static DeviceBuffer LoadFile(string name)
+        {
+            model = Logic.MakeData(name);
+            //Debug.WriteLine("Sizeof oct struct " + Marshal.SizeOf(model[0]));
+            return MakeBuffer(model, BufferUsage.StructuredBufferReadOnly);
         }
         public static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0) where T : struct
         {
@@ -168,7 +177,7 @@ namespace SDFbox
             device.UpdateBuffer(newBuffer, 0, data);
             return newBuffer;
         }
-        static DeviceBuffer MakeEmptyBuffer<T>(BufferUsage usage, uint count) where T : struct
+        public static DeviceBuffer MakeEmptyBuffer<T>(BufferUsage usage, uint count) where T : struct
         {
             BufferDescription description;
             uint structuredStride = 0;
@@ -217,14 +226,18 @@ namespace SDFbox
             string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
             Debug.WriteLine("Loading shader" + path);
             byte[] shaderBytes = File.ReadAllBytes(path);
-            var desc = new ShaderDescription(stage, shaderBytes, entryPoint);
+#if DEBUG
+            var desc = new ShaderDescription(stage, shaderBytes, entryPoint, debug: true);
+#else
+            var desc = new ShaderDescription(stage, shaderBytes, entryPoint, debug: false);
+#endif
             return factory.CreateShader(desc);
 
             string GraphicsExtension()
             {
                 switch (device.BackendType) {
                     case GraphicsBackend.Direct3D11:
-                        return "hlsl";        // RUNTIME-COMPILE
+                        return "hlsl";
                     case GraphicsBackend.Vulkan:
                         return "spv";
                     case GraphicsBackend.OpenGL:
@@ -249,18 +262,19 @@ namespace SDFbox
         }
         static void Resize()
         {
+            Logic.State.screen_size = ScreenSize;
             imGuiRenderer.WindowResized(window.Width, window.Height);
             device.MainSwapchain.Resize((uint) window.Width, (uint) window.Height);
-            renderTexture = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
-            resultTBuffer = factory.CreateTextureView(new TextureViewDescription(renderTexture));
-            Logic.State.screen_size = ScreenSize;
-            renderUnit.UpdateResources(factory, new BindableResource[] { resultTBuffer, drawUBuffer });
-            compUnit.UpdateResources(factory, new BindableResource[] { dataSBuffer, resultTBuffer, infoUBuffer });
+            Texture newTarget = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
+            compute["TB0"] = newTarget;
+            renderer["TB0"] = newTarget;
+            compute.Update(factory);
+            renderer.Update(factory);
         }
         static void DisposeResources()
         {
-            renderUnit.Dispose();
-            compUnit.Dispose();
+            renderer.Dispose();
+            compute.Dispose();
 
             commandList.Dispose();
             device.Dispose();

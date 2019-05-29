@@ -3,6 +3,7 @@ using Converter;
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -19,6 +20,8 @@ namespace SDFbox
         public const int GroupSize = 25;
         public static bool debugGizmos = false;
         public static bool debugWindow = false;
+        public static string loadPath = "";
+        public static float[] frames = new float[24];
 
         const float mSpeed = 0.2f;
         const float tSpeed = 0.1f;
@@ -88,41 +91,44 @@ namespace SDFbox
         public static OctS[] MakeData(string filename)
         {
             OctS[] data = new OctS[0];
-            //BinaryFormatter readerWriter = new BinaryFormatter();
-
-            if (Path.GetExtension(filename) == "") {
-                if (File.Exists(filename + ".asdf"))
-                    filename += ".asdf";
-                else if (File.Exists(filename + ".obj"))
-                    filename += ".obj";
-                else
-                    throw new FileNotFoundException();
-            }
+            filename = AutocompleteFile(filename);
+            string basename = Path.ChangeExtension(filename, null);
+            
 
             if (Path.GetExtension(filename) == ".asdf") {
-                Console.WriteLine("Loading from " + filename);
+                Debug.WriteLine("Loading from " + filename);
                 using (BinaryReader reader = new BinaryReader(File.Open(filename, FileMode.Open)))
                     data = OctS.Deserialize(reader);
 
             } else if (Path.GetExtension(filename) == ".obj") {
-                Console.WriteLine("Generating from " + filename);
-                #region GPU_Gen
-                /*model = Generator.GpuGenerator.Generate(
-                    new Converter.VertexModel(filename + ".obj"), 
-                    Program.graphicsDevice, Program.factory);//*/
-                #endregion GPU_Gen
+                Debug.WriteLine("Generating from " + filename);
+                Debug.WriteLine("Preprocessing...");
                 var vm = new VertexModel(filename);
-                Console.WriteLine("Building trees...");
-                data = new Model(vm).Cast();
+                Debug.WriteLine("Building ASDF...");
+                Model m = new Model(vm);
+                //Model m = new Model(Generator.GpuGenerator.Generate(vm, Program.device, Program.commandList, Program.factory));
 
-                Console.WriteLine("Saving to " + filename);
-                using (BinaryWriter writer = new BinaryWriter(File.Create(filename)))
+                data = m.Cast();
+
+                Debug.WriteLine("Saving to " + basename + ".asdf");
+                using (BinaryWriter writer = new BinaryWriter(File.Create(basename + ".asdf")))
                     OctS.Serialize(data, writer);
             } else
                 throw new ArgumentException("Invalid " + Path.GetExtension(filename) + "; can only read .obj or .asdf files.");
 
             State.buffer_size = data.Length;
             return data;
+        }
+        public static string AutocompleteFile(string filename)
+        {
+            if (File.Exists(filename))
+                return filename;
+            else if (File.Exists(filename + ".asdf"))
+                return filename + ".asdf";
+            else if (File.Exists(filename + ".obj"))
+                return filename + ".obj";
+            else
+                return null;
         }
 
         public static Vertex[] ScreenQuads {
@@ -155,8 +161,8 @@ namespace SDFbox
                 for (int i = 0; i < 6; i++) {
                     d[i].Position.Y *= -1;
                     d[i].Position -= new Vector3(State.position.X, -State.position.Y, State.position.Z);
-                    d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(-heading.Y, 0, 0));
-                    d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(0, heading.X, 0));
+                    d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(-heading.Y, heading.X, 0));
+                    //d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(0, heading.X, 0));
                     d[i].Position = new Vector3(d[i].Position.X / d[i].Position.Z, d[i].Position.Y / d[i].Position.Z, Math.Sign(d[i].Position.Z));
                 }
                 return d;
@@ -168,13 +174,14 @@ namespace SDFbox
             ResetKeys();
             window.KeyDown += KeyDown;
             window.KeyUp += KeyUp;
+            window.DragDrop += DragDrop;
 
             window.MouseMove += (MouseMoveEventArgs mouseEvent) => {
                 if (mouseEvent.State.IsButtonDown(0) && !ImGui.GetIO().WantCaptureMouse) {
-                    window.SetMousePosition(360, 360);
+                    window.SetMousePosition(Program.window.Width / 2, Program.window.Height / 2);
                     window.CursorVisible = false;
                     if (mouseDown)
-                        MouseMove(mouseEvent.MousePosition - new Vector2(360, 360));
+                        MouseMove(mouseEvent.MousePosition - new Vector2(Program.window.Width / 2, Program.window.Height / 2));
                 } else
                     window.CursorVisible = true;
                 mouseDown = mouseEvent.State.IsButtonDown(0);
@@ -192,10 +199,20 @@ namespace SDFbox
         {
             pressed[keyEvent.Key] = false;
         }
+        public static void DragDrop(DragDropEvent dropEvent)
+        {
+            loadPath = dropEvent.File;
+        }
+
         public static void Update(TimeSpan t, InputSnapshot input)
         {
-            float transform = mSpeed * (float) t.TotalSeconds;
-            float rotate = tSpeed * (float) t.TotalSeconds;
+            float sec = (float) t.TotalSeconds;
+            for (int i = frames.Length - 1; i > 0; i--) {
+                frames[i] = frames[i-1];
+            }
+            frames[0] = sec;
+            float transform = mSpeed * sec;
+            float rotate = tSpeed * sec;
             if (pressed[Key.Right])
                 Heading += new Vector2(0, rotate);
             if (pressed[Key.Left])
@@ -217,7 +234,7 @@ namespace SDFbox
             if (pressed[Key.LControl] || pressed[Key.Number3])
                 Position += new Vector3(0, 1, 0) * transform;
 
-            Program.imGuiRenderer.Update((float) t.TotalSeconds, input);
+            Program.imGuiRenderer.Update(sec, input);
         }
         public static void ResetKeys()
         {
@@ -238,35 +255,59 @@ namespace SDFbox
             Heading += new Vector2(-diff.Y, diff.X) / 512 * 4;
         }
 
-        public static void MakeGUI(int frames)
+        public static void MakeGUI(int time)
         {
-            double milliPerFrame = Math.Round(1000.0/frames);
+            double milliPerFrame = Math.Round(1000.0/time);
             double area = Program.ScreenSize.X * Program.ScreenSize.Y;
-            double nanoPerPixel = Math.Round(1000000000.0 / frames / area);
+            double nanoPerPixel = Math.Round(1000000000.0 / time / area);
+            ImGui.StyleColorsClassic();
 
-            if (ImGui.Begin("Debug", ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoBackground)) {
-                ImGui.Text($"Y rotation {Look.Y.ToString().PadLeft(6)}, X rotation {Look.X.ToString()}");
-                ImGui.Text($"{frames} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
+            if (ImGui.Begin("Debug", ImGuiWindowFlags.AlwaysAutoResize)) {
+                if (debugGizmos)
+                    ImGui.PlotLines("", ref frames[0], frames.Length, 0, $"{time} FPS - {nanoPerPixel} nspp", 0, 0.1f, new Vector2(200, 40));
+                else
+                    ImGui.Text($"{time} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
+
                 ImGui.Text($"{Program.ScreenSize.X} x {Program.ScreenSize.Y} px");
-                ImGui.NextColumn();
-                
-                ImGui.SliderFloat("Light X", ref State.light.X, -1, 2);
-                ImGui.SliderFloat("Light Y", ref State.light.Y, -1, 2);
-                ImGui.SliderFloat("Light Z", ref State.light.Z, -1, 2);
-                ImGui.SliderFloat("Light Strength", ref State.strength, 0, 4);
-
-                ImGui.Checkbox("Show Debug Gizmos", ref debugGizmos);
-
+                ImGui.SameLine();
                 if (Program.ScreenSize != new Vector2(720, 720)) {
-                    if (ImGui.Button("Reset to 720 x 720")) {
+                    if (ImGui.Button("Reset")) {
                         Program.window.WindowState = WindowState.Normal;
                         Program.ScreenSize = new Vector2(720, 720);
                     }
+                    if (Program.window.WindowState != WindowState.BorderlessFullScreen)
+                        ImGui.SameLine();
                 }
                 if (Program.window.WindowState != WindowState.BorderlessFullScreen) {
-                    if (ImGui.Button("Fullscreen"))
+                    if (ImGui.Button("Fullscreen [F11]"))
                         Program.window.WindowState = WindowState.BorderlessFullScreen;
                 }
+
+                double value = Math.Round(Model.Sample(Program.model, State.position), 3);
+                int[] path = Model.PathTo(Program.model, State.position).ToArray();
+                ImGui.Text($"Y-Rotation {Look.Y.ToString().PadLeft(6)}, X-Rotation {Look.X.ToString()}");
+                ImGui.Text($"SDF Value at {State.position}: {value.ToString().PadLeft(5)}");
+                ImGui.Text("In Quadrant " + string.Join(", ", path));
+
+                ImGui.SliderFloat("Light X", ref State.light.X, -1, 2);
+                ImGui.SliderFloat("Light Y", ref State.light.Y, -1, 2);
+                ImGui.SliderFloat("Light Z", ref State.light.Z, -1, 2);
+                ImGui.SliderFloat("Light Intensity", ref State.strength, 0, 4);
+                
+                bool submitted = ImGui.InputText($"Load File", ref loadPath, 128, ImGuiInputTextFlags.EnterReturnsTrue);
+                string complete = AutocompleteFile(loadPath.Replace('/', '\\'));
+                if (complete != null) {
+                    string buttonText = "Load";
+                    if (Path.GetExtension(complete) == ".obj") {
+                        ImGui.InputInt("Resolution Level", ref Model.MaxDepth);
+                        buttonText = "Import";
+                    }
+
+                    if (submitted ||  ImGui.Button(buttonText))
+                        Program.Load(loadPath);
+                }
+                
+                ImGui.Checkbox("Show Debug Gizmos", ref debugGizmos);
             }
 
             //data.CmdListsRange[0].CmdBuffer[0].

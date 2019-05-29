@@ -196,12 +196,6 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 		
         prox = current.interpol_world(pos);
 		pos += dir * (prox) * (1 + inf.margin);
-		/*
-			float3 grad = float3(gradient(pos, current));
-			float3 col = float3(abs(grad.x), abs(grad.y), abs(grad.z));
-			set(float4(normalize(col), 0), coord);
-			return;
-		*/
     }
 
 	prox = current.interpol_world(pos);
@@ -215,21 +209,19 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 		return;
 	}
 	float dist = length(inf.light - pos);
-	float lighting_dist = dist;
 
 	for (int j = 0; j < 40 && prox > -inf.margin; j++) {
-		if (dist < prox) {
-			float attenuation = angle / (lighting_dist*lighting_dist) * (exp2(inf.strength)- 1);
+		if (prox > dist / 2) {
+			float attenuation = angle / (dist*dist) * (exp2(inf.strength)- 1);
 			set(float4(attenuation, attenuation, attenuation, i+j), coord);
 			return;
 		}
-		current = find(pos, current); //data[0];//find(pos);
+		current = find(pos, current);
 		if (current.empty == 0) {
 			pos = pos + dir * box_intersect(current, pos, dir).y;
 		}
 		prox = current.interpol_world(pos);
-		pos += dir * prox * (1 + inf.margin);
-		dist = length(inf.light - pos);
+		pos += dir * (prox + inf.margin);
 	}
 	set(float4(0, 0, 0, 140), coord);
 	return;
