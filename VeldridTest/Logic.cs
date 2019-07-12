@@ -22,6 +22,7 @@ namespace SDFbox
         public static bool debugWindow = false;
         public static string loadPath = "";
         public static float[] frames = new float[24];
+        public static VertexModel vm;
 
         const float mSpeed = 0.2f;
         const float tSpeed = 0.1f;
@@ -103,8 +104,9 @@ namespace SDFbox
             } else if (Path.GetExtension(filename) == ".obj") {
                 Debug.WriteLine("Generating from " + filename);
                 Debug.WriteLine("Preprocessing...");
-                var vm = new VertexModel(filename);
+                vm = new VertexModel(filename);//, Program.device, Program.commandList, Program.factory);
                 Debug.WriteLine("Building ASDF...");
+
                 Model m = new Model(vm);
                 //Model m = new Model(Generator.GpuGenerator.Generate(vm, Program.device, Program.commandList, Program.factory));
 

@@ -17,12 +17,12 @@ using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using Generator;
+using System.Text;
 
 namespace SDFbox
 {
     class Program
     {
-        //TODO: Encapsulate most of this
         public static Sdl2Window window;
         public static GraphicsDevice device;
         public static ResourceFactory factory;
@@ -49,6 +49,7 @@ namespace SDFbox
             TimeSpan delta = TimeSpan.FromSeconds(0);
             Logic.Heading = Logic.Heading;
             Logic.Position = Logic.Position;
+            window.WindowState = WindowState.Maximized;
 
             while (window.Exists) {
                 delta = DateTime.Now - start;
@@ -66,15 +67,17 @@ namespace SDFbox
 
         static void Draw()
         {
-            device.UpdateBuffer(compute.Buffer("UB0"), 0, Logic.State);
-            device.UpdateBuffer(renderer.Buffer("UB0"), 0, Logic.DrawState);
+            device.UpdateBuffer(compute.Buffer("info"), 0, Logic.State);
+            device.UpdateBuffer(renderer.Buffer("info"), 0, Logic.DrawState);
+
+            Logic.vm?.Inside(Vector3.Zero, 0);
 
             var cl = commandList;
-            /*
+            /**
                 if (Generator.GpuGenerator.compute != null)
                 Generator.GpuGenerator.DistanceAt(Logic.State.position); 39712
                 var gcmp = GpuGenerator.compute;
-                device.UpdateBuffer(gcmp.Buffer("UB0"), 0, new Vector4(0, 0, 0, 0));
+                device.UpdateBuffer(gcmp.Buffer("info"), 0, new Vector4(0, 0, 0, 0));
                 gcmp.Update(factory);
             */
 
@@ -121,18 +124,21 @@ namespace SDFbox
                 Topology = PrimitiveTopology.TriangleStrip,
                 Output = device.SwapchainFramebuffer.OutputDescription
             };
-            renderDesc.AddResource("TB0", ResourceKind.TextureReadOnly, renderTexture);
-            renderDesc.AddResource("UB0", ResourceKind.UniformBuffer, drawUBuffer);
+            renderDesc.AddResource("texture", ResourceKind.TextureReadOnly, renderTexture);
+            renderDesc.AddResource("info", ResourceKind.UniformBuffer, drawUBuffer);
             renderer = new VertFragUnit(factory, renderDesc);
 
             var dataSBuffer = LoadFile(path);
             var infoUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
-            var compDesc = new ComputeUnit.Description(LoadShader(ShaderStages.Compute));
+            var compDesc = new ComputeUnit.Description(LoadShader("Compute", ShaderStages.Compute)) {
+                xGroupSize = 24,
+                yGroupSize = 24
+            };
 
-            compDesc.AddResource("SB0", ResourceKind.StructuredBufferReadOnly, dataSBuffer);
-            compDesc.AddResource("TB0", ResourceKind.TextureReadWrite, renderTexture);
-            compDesc.AddResource("UB0", ResourceKind.UniformBuffer, infoUBuffer);
+            compDesc.AddResource("data", ResourceKind.StructuredBufferReadOnly, dataSBuffer);
+            compDesc.AddResource("result", ResourceKind.TextureReadWrite, renderTexture);
+            compDesc.AddResource("info", ResourceKind.UniformBuffer, infoUBuffer);
             compute = new ComputeUnit(factory, compDesc);
 
 
@@ -150,7 +156,7 @@ namespace SDFbox
         }
         public static void Load(string path)
         {
-            compute["SB0"] = LoadFile(path);
+            compute["data"] = LoadFile(path);
             compute.Update(factory);
             //compUnit.UpdateResources(factory, new BindableResource[] { dataSBuffer, resultTBuffer, infoUBuffer });
         }
@@ -208,7 +214,7 @@ namespace SDFbox
             tDesc.SampleCount = TextureSampleCount.Count1;
             return factory.CreateTexture(tDesc);
         }
-        public static Shader LoadShader(string name, ShaderStages stage)
+        public static Shader LoadShader(string name, ShaderStages stage, params string[] include)
         {
             string extension = GraphicsExtension();
             string entryPoint = "";
@@ -224,12 +230,18 @@ namespace SDFbox
                     break;
             }
             string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
-            Debug.WriteLine("Loading shader" + path);
-            byte[] shaderBytes = File.ReadAllBytes(path);
+            Debug.WriteLine("Loading shader: " + path);
+
+            List<byte> shaderBytes = new List<byte>();
+            foreach (string inc in include) {
+                string incpath = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
+                shaderBytes.AddRange(File.ReadAllBytes(incpath));
+            }
+            shaderBytes.AddRange(File.ReadAllBytes(path));
 #if DEBUG
-            var desc = new ShaderDescription(stage, shaderBytes, entryPoint, debug: true);
+            var desc = new ShaderDescription(stage, shaderBytes.ToArray(), entryPoint, debug: true);
 #else
-            var desc = new ShaderDescription(stage, shaderBytes, entryPoint, debug: false);
+            var desc = new ShaderDescription(stage, shaderBytes.ToArray(), entryPoint, debug: false);
 #endif
             return factory.CreateShader(desc);
 
@@ -266,8 +278,8 @@ namespace SDFbox
             imGuiRenderer.WindowResized(window.Width, window.Height);
             device.MainSwapchain.Resize((uint) window.Width, (uint) window.Height);
             Texture newTarget = MakeTexture(Round(window.Width, Logic.GroupSize), Round(window.Height, Logic.GroupSize));
-            compute["TB0"] = newTarget;
-            renderer["TB0"] = newTarget;
+            compute["result"] = newTarget;
+            renderer["texture"] = newTarget;
             compute.Update(factory);
             renderer.Update(factory);
         }
@@ -318,13 +330,15 @@ namespace SDFbox
     [Serializable]
     struct OctS
     {
-        public int Parent;
         public Vector3 lower;
-        public Vector3 higher;
-        public int empty;
+        public float scale;
 
-        public Int8 children;
         public Vector8 verts;
+
+        public int Parent;
+        public int empty;
+        public int children;
+        //public Int8 children;
         //*/
         /*
         public OctS(int Parent, Int8 children, Vector8 verts, Vector3 lower, Vector3 higher) {
@@ -342,13 +356,18 @@ namespace SDFbox
             if (vertsH.X <= 0 || vertsH.X <= 0 || vertsH.W <= 0 || vertsH.Z <= 0)
                 empty = 0;
         }//*/
-        public OctS(int Parent, int[] children, float[] verts, Vector3 lower, Vector3 higher)
+        public Vector3 higher {
+            get {
+                return lower + Vector3.One * scale;
+            }
+        }
+        public OctS(int Parent, int children, float[] verts, Vector3 lower, float scale)
         {
             this.Parent = Parent;
             this.lower = lower;
-            this.higher = higher;
+            this.scale = scale;
 
-            this.children = new Int8(children);
+            this.children = children;
             this.verts = new Vector8(verts);
 
             empty = 1;
@@ -363,7 +382,7 @@ namespace SDFbox
             foreach (OctS current in octs) {
                 writer.Write(current.Parent);
                 writer.Write(current.empty);
-                current.children.Serialize(writer);
+                writer.Write(current.children);
                 current.verts.Serialize(writer);
             }
         }
@@ -375,7 +394,7 @@ namespace SDFbox
                 read.Add(new OctS() {
                     Parent = reader.ReadInt32(),
                     empty = reader.ReadInt32(),
-                    children = Int8.Deserialize(reader),
+                    children = reader.ReadInt32(),
                     verts = Vector8.Deserialize(reader)
                 });
             }
@@ -387,14 +406,14 @@ namespace SDFbox
             {
                 OctS current = read[p];
                 current.lower = lower;
-                current.higher = lower + Vector3.One * scale;
+                current.scale = scale;
                 read[p] = current;
-                if (current.children.S == -1)
+                if (current.children == -1)
                     return;
 
                 scale /= 2;
                 for (int i = 0; i < 8; i++) {
-                    Rectify(current.children.Array[i], lower + SdfMath.split(i).Vector * scale, scale);
+                    Rectify(current.children + i, lower + SdfMath.split(i).Vector * scale, scale);
                 }
             }
         }

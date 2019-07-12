@@ -15,7 +15,7 @@ namespace SDFbox
         //SaveModel save;
         const float HalfSqrt3 = 0.866025f;
         public static float precision = 0.002f;
-        public static int MaxDepth = 4;
+        public static int MaxDepth = 5;
         //public static float maxResolution = 0.004f;
 
         public Model(Octree c)
@@ -55,7 +55,8 @@ namespace SDFbox
                 float[] verts = new float[8];
                 Vector3 center = pos + Vector3.One * 0.5f * scale;
                 float centerValue = vm.DistanceAt(center, possible);
-                possible = vm.GetPossible(center, HalfSqrt3 * scale, possible);
+                //possible = vm.GetPossible(center, HalfSqrt3 * scale, possible);
+                possible = vm.GetPossiblePrecomp(center, Math.Abs(centerValue) + HalfSqrt3 * scale, possible);
                 for (int i = 0; i < 8; i++) {
                     verts[i] = vm.DistanceAt(pos + SdfMath.split(i).Vector * scale, possible);
                 }
@@ -79,10 +80,11 @@ namespace SDFbox
             }
         }
 
+
         public static float Sample(OctS[] sdf, Vector3 pos)
         {
             int p = 0;
-            while (sdf[p].children.X != -1) {
+            while (sdf[p].children != -1) {
                 Vector3 direction = pos - (sdf[p].lower + sdf[p].higher) / 2;
                 int delta = 0;
                 if (direction.X > 0)
@@ -91,7 +93,7 @@ namespace SDFbox
                     delta += 2;
                 if (direction.Z > 0)
                     delta += 4;
-                p = sdf[p].children.Array[delta];
+                p = sdf[p].children + delta;
             }
             OctS found = sdf[p];
             return SdfMath.Lerp3(found.verts, (pos - found.lower) / (found.lower + found.higher));
@@ -100,7 +102,7 @@ namespace SDFbox
         {
             List<int> path = new List<int>();
             int p = 0;
-            while (sdf[p].children.X != -1) {
+            while (sdf[p].children != -1) {
                 Vector3 direction = pos - (sdf[p].lower + sdf[p].higher) / 2;
                 int delta = 0;
                 if (direction.X > 0)
@@ -110,7 +112,7 @@ namespace SDFbox
                 if (direction.Z > 0)
                     delta += 4;
                 path.Add(delta);
-                p = sdf[p].children.Array[delta];
+                p = sdf[p].children + delta;
             }
             return path;
         }
@@ -175,10 +177,10 @@ namespace SDFbox
         {
             OctS point = raw[position];
             Octree current = new Octree(point.verts.Array);
-            if (point.children.X > 0) {
+            if (point.children > 0) {
                 Octree[] children = new Octree[8];
                 for (int i = 0; i < 8; i++) {
-                    children[i] = Load(raw, point.children.Array[i]);
+                    children[i] = Load(raw, point.children + i);
                 }
                 current.Children = children;
             }
@@ -189,24 +191,23 @@ namespace SDFbox
         public OctS[] Cast()
         {
             List<OctS> res = new List<OctS>();
-            Cast(res, 1, Vector3.Zero, -1);
+            res.Add(new OctS());
+            Cast(res, 1, Vector3.Zero, -1, 0);
             return res.ToArray();
         }
-        private void Cast(List<OctS> octs, float scale, Vector3 pos, int parent)
+        private void Cast(List<OctS> octs, float scale, Vector3 pos, int parent, int at)
         {
-            if (Children == null) {
-                octs.Add(new OctS(parent, new int[] { -1, -1, -1, -1, -1, -1, -1, -1 }, Vertices, pos, pos + Vector3.One * scale));
-            } else {
-                int mypos = octs.Count;
-                octs.Add(new OctS());
-                int[] childindices = new int[8];
+            if (Children == null)
+                octs[at] = new OctS(parent, -1, Vertices, pos, scale);
+            else {
+                int start = octs.Count;
+                octs[at] = new OctS(parent, start, Vertices, pos, scale);
                 for (int i = 0; i < 8; i++) {
-                    childindices[i] = octs.Count;
-                    Children[i].Cast(octs, scale / 2,
-                        pos + SdfMath.split(i).Vector * scale / 2,
-                        mypos);
+                    octs.Add(new OctS());
                 }
-                octs[mypos] = new OctS(parent, childindices, Vertices, pos, pos + Vector3.One * scale);
+                for (int i = 0; i < 8; i++) {
+                    Children[i].Cast(octs, scale / 2, pos + SdfMath.split(i).Vector * scale / 2, at, start + i);
+                }
             }
         }
         public static void Reduce(ref Int3 pos, ref int level)

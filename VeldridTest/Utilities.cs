@@ -142,8 +142,8 @@ namespace SDFbox
         public new class Description : RenderUnit.Description
         {
             public Shader Shader;
-            public uint xGroupSize = 25;
-            public uint yGroupSize = 25;
+            public uint xGroupSize = 1;
+            public uint yGroupSize = 1;
             public uint zGroupSize = 1;
 
             public Description(Shader s)

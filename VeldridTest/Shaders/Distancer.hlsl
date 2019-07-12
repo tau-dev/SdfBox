@@ -1,5 +1,5 @@
 
-#define groupSize 256
+#define groupSize 512
 
 struct Face
 {
@@ -92,8 +92,7 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	*/
 	if (inside(testPos, f.a, f.b, f.c)) {
 		float3 normal = normalize(cross(f.b.xyz - f.a.xyz, f.c.xyz - f.a.xyz));
-		//normal = normal.z > 0 ? normal : -normal;
-		float t = dot(normal, testPos.xyz + f.a.xyz) / normal.z;
+		float t = dot(normal, f.a.xyz - testPos.xyz) / normal.z; //  testPos.xyz + f.a.xyz
 
 		if (t > 0)
 			dist = -dist;

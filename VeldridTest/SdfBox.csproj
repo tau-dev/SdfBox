@@ -244,9 +244,9 @@
     </Reference>
     <Reference Include="Veldrid, Version=4.6.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\Veldrid.4.6.1\lib\netstandard2.0\Veldrid.dll</HintPath>
+      <!--<HintPath>..\packages\Veldrid.4.6.1\lib\netstandard2.0\Veldrid.dll</HintPath>-->
       <!--WARNING! OLD!-->
-      <!--<HintPath>C:\Users\Jonathan\source\repos\VeldridContext\veldrid-master\bin\Debug\Veldrid\netstandard2.0\Veldrid.dll</HintPath>-->
+      <HintPath>C:\Users\Jonathan\source\repos\VeldridContext\veldrid-master\bin\Debug\Veldrid\netstandard2.0\Veldrid.dll</HintPath>
     </Reference>
     <Reference Include="Veldrid.ImGui, Version=5.69.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Veldrid.ImGui.5.69.0\lib\netstandard2.0\Veldrid.ImGui.dll</HintPath>
@@ -291,6 +291,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="models\dragonLarge.obj">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="models\Flach.obj">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="models\MendedMinasTirith.obj">
@@ -350,6 +353,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Shaders\Distancer.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Shaders\Layers.hlsl">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="StanDragon96.ico" />

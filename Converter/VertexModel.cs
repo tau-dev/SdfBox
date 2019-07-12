@@ -16,9 +16,8 @@ namespace Converter
         static VertexModel v;
         static void Main(string[] args)
         {
-            IObjLoader objLoader = (new ObjLoaderFactory()).Create();
             try {
-                v = new VertexModel(args[0], objLoader);
+                v = new VertexModel(args[0]);
             } catch (FileNotFoundException) {
                 return;
             }
@@ -35,7 +34,9 @@ namespace Converter
         //public Obj Raw;// { get; private set; }
         public DetailVertex[] xSorted; // TODO privatify
         //public Vector3[] xSortedNormals;
-        public const float Scale = 3.0f;
+        protected float Scale;
+        protected Vector3 Offset;
+        const float padding = 1.1f;
         KdTree verts;
 
         public VertexModel(string fileName) : this(fileName, (new ObjLoaderFactory()).Create())
@@ -46,10 +47,11 @@ namespace Converter
         {
             using (var file = new FileStream(fileName, FileMode.Open))
                 RawData = loader.Load(file);
+            FindDimensions();
             Sort();
         }
 
-        public float DistanceAt(Vector3 v, List<int> possible)
+        public virtual float DistanceAt(Vector3 v, List<int> possible)
         {
             v = Transform(v);
             int closest = 0;
@@ -63,22 +65,25 @@ namespace Converter
                 if ((xSorted[i].Pos.X - xSorted[closest].Pos.X) * (xSorted[i].Pos.X - xSorted[closest].Pos.X) > minDistance)
                     break;
             }
+
+            if (float.IsPositiveInfinity(minDistance))
+                Debug.WriteLine("Did not find ");
+            if (float.IsInfinity(minDistance) || float.IsNaN(minDistance))
+                Debug.WriteLine("NaN distance, Oh noes.");
+
             minDistance = (float) Math.Sqrt(minDistance);
 
             if (Inside(v, closest))
                 minDistance *= -1;
 
-
-            if (float.IsInfinity(minDistance) || float.IsNaN(minDistance))
-                Debug.WriteLine("NaN distance, Oh noes.");
             return minDistance / Scale;
         }
 
         public virtual bool Inside(Vector3 v, int closest)
         {
             return Vector3.Dot(xSorted[closest].Normal, xSorted[closest].Pos - v) > 0;
-            bool outside = false;
             /**
+            bool outside = false;
             foreach (var n in xSorted[closest].Normals) {
                 if (Vector3.Dot(n, v - xSorted[closest].Pos) > 0)
                     outside = true;
@@ -90,27 +95,30 @@ namespace Converter
             */
         }
 
-        public List<int> GetPossible(Vector3 pos, float scale, List<int> possible)
+        public virtual List<int> GetPossible(Vector3 pos, float scale, List<int> possible)
+        {
+            return GetPossiblePrecomp(pos, FacelessDistanceAt(pos, possible) + scale, possible);
+        }
+        public List<int> GetPossiblePrecomp(Vector3 pos, float minDistance, List<int> possible)
         {
             pos = Transform(pos);
-            float minDist = FacelessDistanceAt(pos, possible) + scale;
-
+            minDistance *= Scale;
             List<int> next = new List<int>();
             foreach (int i in possible) {
-                if (Vector3.Distance(xSorted[i].Pos, pos) < minDist)
+                if (Vector3.Distance(xSorted[i].Pos, pos) < minDistance)
                     next.Add(i);
             }
             return next;
         }
         float FacelessDistanceAt(Vector3 v, List<int> possible)
         {
+            v = Transform(v);
             float minDistance = Single.PositiveInfinity;
 
             foreach (int i in possible) {
                 minDistance = Math.Min(minDistance, Vector3.DistanceSquared(xSorted[i].Pos, v));
             }
             return (float) Math.Sqrt(minDistance);
-
         }
         public List<int> All()
         {
@@ -121,14 +129,31 @@ namespace Converter
             return x;
         }
 
-        private Vector3 Transform(Vector3 p)
+        private void FindDimensions()
         {
-            Vector3 t = (p - new Vector3(.5f, .5f, .5f)) * Scale; //(.5f, .625f, .5f)
-            t.Y *= -1;
-            return t;
+            Vector3 lower = new Vector3(float.PositiveInfinity);
+            Vector3 higher = new Vector3(float.NegativeInfinity);
+            foreach (var vert in RawData.Vertices) {
+                lower.X = Math.Min(lower.X, vert.X);
+                lower.Y = Math.Min(lower.Y, vert.Y);
+                lower.Z = Math.Min(lower.Z, vert.Z);
+                higher.X = Math.Max(higher.X, vert.X);
+                higher.Y = Math.Max(higher.Y, vert.Y);
+                higher.Z = Math.Max(higher.Z, vert.Z);
+            }
+            Offset = (lower + higher) / 2 + new Vector3(0.003f);
+            float lowest = Math.Min(lower.X, Math.Min(lower.Y, lower.Z));
+            float highest = Math.Max(higher.X, Math.Max(higher.Y, higher.Z));
+            Scale = (highest - lowest) * padding;
+        }
+        protected Vector3 Transform(Vector3 worldPos)
+        {
+            worldPos.Y = 1 - worldPos.Y;
+            Vector3 modelPos = (worldPos - new Vector3(0.5f)) * Scale + Offset; //(.5f, .625f, .5f)
+            return modelPos;
         }
 
-        void Sort()
+        protected virtual void Sort()
         {
             List<DetailVertex> ordered = new List<DetailVertex>(RawData.Vertices.Count);
 

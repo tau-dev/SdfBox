@@ -1,4 +1,8 @@
-﻿struct Oct
+
+#define groupSizeX 24
+#define groupSizeY 24
+
+struct Oct
 {
 	int parent;
 	float3 lower;
@@ -17,13 +21,6 @@
 	{
 		float3 d = saturate((pos - lower) / (higher - lower)); //smoothstep(lower, higher, pos);//
 		return interpol_inside(d);
-		/*
-		float cOO = lerp(vertsL.x, vertsL.y, d.x);
-		float cOI = lerp(vertsL.z, vertsL.w, d.x);
-		float cIO = lerp(vertsH.x, vertsH.y, d.x);
-		float cII = lerp(vertsH.z, vertsH.w, d.x);
-		return lerp(lerp(cOO, cOI, d.y),
-			lerp(cIO, cII, d.y), d.z);*/
 	}
 	float interpol_inside(float3 d)
 	{
@@ -33,10 +30,6 @@
 		float cII = lerp(vertsH.z, vertsH.w, d.x);
 		return lerp(lerp(cOO, cOI, d.y),
 			lerp(cIO, cII, d.y), d.z);
-
-		/*float4 cO = lerp(vertsL, vertsH, d.z);
-		float2 cI = lerp(cO.xy, cO.zw, d.y);
-		return lerp(cI.x, cI.y, d.x);*/
 	}
 };
 
@@ -55,8 +48,10 @@ struct Info
 StructuredBuffer<Oct> data : register(t0);
 cbuffer B : register(b0)
 {
-	Info inf;
+	Info info;
 }
+RWTexture2D<float4> output : register(u0);
+
 Oct find(float3 pos, Oct c)
 {
 	int index = 0;
@@ -67,7 +62,7 @@ Oct find(float3 pos, Oct c)
 			c = data[index];
 		} while (!c.inside(pos) && c.parent >= 0);
 	}
-	while (index < inf.buffer_size && iterations < 12) {
+	while (index < info.buffer_size && iterations < 12) {
 		c = data[index];
 
 		if (c.childrenL.x < 0) {
@@ -112,9 +107,9 @@ Oct find(float3 pos, Oct c)
 float3 gradient(float3 pos, Oct frame)
 {
 	pos = (pos - frame.lower) / (frame.higher - frame.lower);
-	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
-	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
-	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
+	float3 incX = float3(pos.x + info.margin, pos.y, pos.z);
+	float3 incY = float3(pos.x, pos.y + info.margin, pos.z);
+	float3 incZ = float3(pos.x, pos.y, pos.z + info.margin);
 	float at = frame.interpol_inside(pos);
 	float x = frame.interpol_inside(incX);
 	float y = frame.interpol_inside(incY);
@@ -122,15 +117,21 @@ float3 gradient(float3 pos, Oct frame)
 	return float3(x - at, y - at, z - at);
 }
 
-float3 ray(uint2 coord)
-{
-	float2 screendir = (float2)coord / inf.screen_size.y - float2( inf.screen_size.x / inf.screen_size.y * .5, .5);
-	float3 dir = mul(float3(screendir, .5), inf.heading);
-	return normalize(dir);
-}
-
 uint2 absoluteCoord(uint3 threadID, uint3 groupID)
 {
 	return threadID.xy + groupID.xy * uint2(groupSizeX, groupSizeY);
 }
 
+
+[numthreads(groupSizeX, groupSizeY, 1)]
+void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
+{
+	uint2 coord = absoluteCoord(threadID, groupID);
+	float2 screen = (float2) coord / info.screen_size;
+	float3 pos = float3(screen.x, screen.y, info.position.z);
+
+	float val = find(pos, data[0]).interpol_world(pos);
+
+	output[coord.xy] = val > 0 ? float4(1 - 4*val, 0, 0, 0) : float4(0, 0, 1 + 4*val, 0);
+	return;
+}

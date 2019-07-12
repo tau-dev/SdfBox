@@ -1,78 +1,83 @@
 ﻿
-using Converter;
-using SDFbox;
-using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Converter;
+using SDFbox;
 using Veldrid;
 
 namespace Generator
 {
-    class GpuGenerator
+    class ComputedModel : VertexModel
     {
         // TODO: Stronger encapsultion
-        static ResourceFactory factory;
-        static GraphicsDevice device;
-        static CommandList commandList;
+        ResourceFactory factory;
+        GraphicsDevice device;
+        CommandList commandList;
         //static DeviceBuffer vertexSBuffer;
         //static DeviceBuffer resultSBuffer;
         //static DeviceBuffer infoUBuffer;
-        public static ComputeUnit distanceCompute;
-        public static DeviceBuffer distanceStaging;
-        public static uint count;
+        public ComputeUnit distanceCompute;
+        public DeviceBuffer distanceStaging;
+        public ComputeUnit orientationCompute;
+        public DeviceBuffer orientationStaging;
+        public uint count;
         const float HalfSqrt3 = 0.866025f;
 
-        public static Octree Generate(VertexModel v, GraphicsDevice d, CommandList cl, ResourceFactory f)
+        public ComputedModel(string file, GraphicsDevice d, CommandList cl, ResourceFactory f) : base(file)
         {
             device = d;
             factory = f;
             commandList = cl;
             List<Face> faces = new List<Face>();
-            foreach (var face in v.RawData.Groups[0].Faces) {
+            foreach (var face in RawData.Groups[0].Faces) {
                 for (int i = 0; i < face.Count - 2; i++) {
-                    var a = v.RawData.Vertices[face[0].VertexIndex-1];
-                    var b = v.RawData.Vertices[face[i+1].VertexIndex-1];
-                    var c = v.RawData.Vertices[face[i+2].VertexIndex-1];
+                    var a = RawData.Vertices[face[0].VertexIndex-1];
+                    var b = RawData.Vertices[face[i+1].VertexIndex-1];
+                    var c = RawData.Vertices[face[i+2].VertexIndex-1];
                     faces.Add(new Face(a, b, c));
                 }
             }
-            count = (uint) faces.Count;
+            count = (uint) RawData.Groups[0].Faces.Count;
+
+            DeviceBuffer vertexSBuffer = Program.MakeBuffer(faces.ToArray(), BufferUsage.StructuredBufferReadOnly);
+            DeviceBuffer infoUBuffer = Program.MakeEmptyBuffer<Vector4>(BufferUsage.UniformBuffer, 1);
 
             var desc = new ComputeUnit.Description(Program.LoadShader("Distancer", ShaderStages.Compute)) {
                 xGroupSize = 256,
                 yGroupSize = 1,
                 zGroupSize = 1
             };
-            DeviceBuffer vertexSBuffer = Program.MakeBuffer(faces.ToArray(), BufferUsage.StructuredBufferReadOnly);
-            DeviceBuffer resultSBuffer = Program.MakeEmptyBuffer<float>(BufferUsage.StructuredBufferReadWrite, count);
             distanceStaging = Program.MakeEmptyBuffer<float>(BufferUsage.Staging, count);
-            DeviceBuffer infoUBuffer = Program.MakeEmptyBuffer<Vector4>(BufferUsage.UniformBuffer, 1);
-            desc.AddResource("SB0", ResourceKind.StructuredBufferReadOnly, vertexSBuffer);
-            desc.AddResource("TB0", ResourceKind.StructuredBufferReadWrite, resultSBuffer);
-            desc.AddResource("UB0", ResourceKind.UniformBuffer, infoUBuffer);
-
+            DeviceBuffer resultSBuffer = Program.MakeEmptyBuffer<float>(BufferUsage.StructuredBufferReadWrite, count);
+            desc.AddResource("vertices", ResourceKind.StructuredBufferReadOnly, vertexSBuffer);
+            desc.AddResource("result", ResourceKind.StructuredBufferReadWrite, resultSBuffer);
+            desc.AddResource("info", ResourceKind.UniformBuffer, infoUBuffer);
             distanceCompute = new ComputeUnit(factory, desc);
 
-            var tree = construct(v, 0, Vector3.Zero);
-
-            //vertexSBuffer.Dispose();
-            //resultSBuffer.Dispose();
-            //infoUBuffer.Dispose();
-
-            return tree;
+            desc = new ComputeUnit.Description(Program.LoadShader("InsideFinder", ShaderStages.Compute)) {
+                xGroupSize = 256,
+                yGroupSize = 1,
+                zGroupSize = 1
+            };
+            orientationStaging = Program.MakeEmptyBuffer<bool>(BufferUsage.Staging, count);
+            DeviceBuffer orientationSBuffer = Program.MakeEmptyBuffer<int>(BufferUsage.StructuredBufferReadWrite, count);
+            desc.AddResource("vertices", ResourceKind.StructuredBufferReadOnly, vertexSBuffer);
+            desc.AddResource("result", ResourceKind.StructuredBufferReadWrite, orientationSBuffer);
+            desc.AddResource("info", ResourceKind.UniformBuffer, infoUBuffer);
+            orientationCompute = new ComputeUnit(factory, desc);
         }
 
-        public static float DistanceAt(Vector3 pos)
+        /*
+        public override float DistanceAt(Vector3 pos, List<int> possible)
         {
             pos = Transform(pos);
             //unit.UpdateResources(factory, new BindableResource[] { vertexSBuffer, resultSBuffer, infoUBuffer });
-            device.UpdateBuffer(distanceCompute.Buffer("UB0"), 0, pos);
+            device.UpdateBuffer(distanceCompute.Buffer("info"), 0, pos);
             distanceCompute.Update(factory);
             commandList.Begin();
             distanceCompute.DispatchSized(commandList, count, 1, 1);
-            commandList.CopyBuffer(distanceCompute.Buffer("TB0"), 0, distanceStaging, 0, count * sizeof(float));
+            commandList.CopyBuffer(distanceCompute.Buffer("result"), 0, distanceStaging, 0, count * sizeof(float));
             commandList.End();
             device.SubmitCommands(commandList);
             device.WaitForIdle();
@@ -82,8 +87,7 @@ namespace Generator
             int flip = 0;
 
             for (int i = 0; i < count; i++) {
-                if (Math.Abs(results[i]) < bestDistance)
-                    bestDistance = results[i];
+                bestDistance = Math.Min(bestDistance, Math.Abs(results[i]));
                 if (results[i] < 0)
                     flip++;
             }
@@ -91,11 +95,41 @@ namespace Generator
 
             if (flip % 2 == 1)
                 bestDistance *= -1;
-            return bestDistance / VertexModel.Scale;
+            return bestDistance / Scale;
+        }
+        private float DistanceAt(Vector3 pos)
+        {
+            return DistanceAt(pos, new List<int>());
+        }
+        //*/
+        public override bool Inside(Vector3 pos, int closest)
+        {
+            device.UpdateBuffer(orientationCompute.Buffer("info"), 0, pos);
+            orientationCompute.Update(factory);
+            commandList.Begin();
+            orientationCompute.DispatchSized(commandList, count, 1, 1);
+            commandList.CopyBuffer(orientationCompute.Buffer("result"), 0, orientationStaging, 0, count * sizeof(float));
+            commandList.End();
+            device.SubmitCommands(commandList);
+            device.WaitForIdle();
+
+            var results = device.Map<int>(orientationStaging, MapMode.Read);
+            int flip = 0;
+            for (int i = 0; i < count; i++) {
+                if (results[i] != 0)
+                    flip++;
+            }
+            device.Unmap(orientationStaging);
+            return flip % 2 == 1;
+        }
+        /*
+        public override List<int> GetPossible(Vector3 pos, float scale, List<int> possible)
+        {
+            return new List<int>();
         }
 
         // NOTE: Copied from Model.cs/Model - find bettter solution
-        static Octree construct(VertexModel vm, int depth, Vector3 pos)
+        Octree construct(VertexModel vm, int depth, Vector3 pos)
         {
             float scale = (float) Math.Pow(0.5, depth);
             float[] verts = new float[8];
@@ -117,12 +151,7 @@ namespace Generator
 
             return build;
         }
-        private static Vector3 Transform(Vector3 p)
-        {
-            Vector3 t = (p - new Vector3(.5f, .5f, .5f)) * VertexModel.Scale; //(.5f, .625f, .5f)
-            t.Y *= -1;
-            return t;
-        }
+        //*/
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 16)]

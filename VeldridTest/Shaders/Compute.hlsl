@@ -1,50 +1,44 @@
 
 #pragma warning( disable: 3571  )
 
-#define groupSizeX 25
-#define groupSizeY 25
+#define groupSizeX 24
+#define groupSizeY 24
 #define OctCount 73
 
 struct Oct
 {
-	int parent;
-	float3 lower;
-	float3 higher;
+    float3 lower;
+    float scale;
+
+    float4 vertsL;
+    float4 vertsH;
+
+    int parent;
 	int empty;
-	int4 childrenL;
-	int4 childrenH;
-	float4 vertsL;
-	float4 vertsH;
+    int children;
+
+    float3 higher()
+    {
+        return lower + scale;
+    }
 
 	bool inside(float3 pos)
 	{
-		return all(lower <= pos) && all(pos <= higher);
-	}
+        return all(lower <= pos) && all(pos <= higher());
+    }
+    float interpol_inside(float3 d)
+    {
+        float cOO = lerp(vertsL.x, vertsL.y, d.x);
+        float cOI = lerp(vertsL.z, vertsL.w, d.x);
+        float cIO = lerp(vertsH.x, vertsH.y, d.x);
+        float cII = lerp(vertsH.z, vertsH.w, d.x);
+        return lerp(lerp(cOO, cOI, d.y),
+			lerp(cIO, cII, d.y), d.z);
+    }
 	float interpol_world(float3 pos)
 	{
-		float3 d = saturate((pos - lower) / (higher - lower)); //smoothstep(lower, higher, pos);//
+		float3 d = saturate((pos - lower) / scale); //smoothstep(lower, higher, pos);//
 		return interpol_inside(d);
-		/*
-		float cOO = lerp(vertsL.x, vertsL.y, d.x);
-		float cOI = lerp(vertsL.z, vertsL.w, d.x);
-		float cIO = lerp(vertsH.x, vertsH.y, d.x);
-		float cII = lerp(vertsH.z, vertsH.w, d.x);
-		return lerp(lerp(cOO, cOI, d.y),
-			lerp(cIO, cII, d.y), d.z);*/
-	}
-	float interpol_inside(float3 d)
-	{
-		///*
-		float cOO = lerp(vertsL.x, vertsL.y, d.x);
-		float cOI = lerp(vertsL.z, vertsL.w, d.x);
-		float cIO = lerp(vertsH.x, vertsH.y, d.x);
-		float cII = lerp(vertsH.z, vertsH.w, d.x);
-		return lerp(lerp(cOO, cOI, d.y),
-			lerp(cIO, cII, d.y), d.z);
-		//*/
-		/*float4 cO = lerp(vertsL, vertsH, d.z);
-		float2 cI = lerp(cO.xy, cO.zw, d.y);
-		return lerp(cI.x, cI.y, d.x);*/
 	}
 };
 
@@ -61,17 +55,10 @@ struct Info
 };
 
 StructuredBuffer<Oct> data : register(t0);
-RWTexture2D<float4> tex : register(u0);
 cbuffer B : register(b0)
 {
 	Info inf;
 }
-uint2 absoluteCoord(uint3 threadID, uint3 groupID)
-{
-	return threadID.xy + groupID.xy * uint2(groupSizeX, groupSizeY);
-}
-
-
 Oct find(float3 pos, Oct c)
 {
 	int index = 0;
@@ -85,11 +72,11 @@ Oct find(float3 pos, Oct c)
 	while (index < inf.buffer_size && iterations < 12) {
 		c = data[index];
 
-		if (c.childrenL.x < 0) {
+		if (c.children < 0) {
 			return c;
 		}
 
-		float3 direction = pos - (c.lower + c.higher) / 2;
+        float3 direction = pos - (c.lower + c.scale / 2);
 		int p = 0;
 		if (direction.x > 0) {
 			p = 1;
@@ -100,32 +87,15 @@ Oct find(float3 pos, Oct c)
 		if (direction.z > 0) {
 			p += 4;
 		}
-
-		switch (p) {
-		case 0:
-			index = c.childrenL.x; break;
-		case 1:
-			index = c.childrenL.y; break;
-		case 2:
-			index = c.childrenL.z; break;
-		case 3:
-			index = c.childrenL.w; break;
-		case 4:
-			index = c.childrenH.x; break;
-		case 5:
-			index = c.childrenH.y; break;
-		case 6:
-			index = c.childrenH.z; break;
-		case 7:
-			index = c.childrenH.w; break;
-		}
+        index = c.children + p;
 		iterations++;
 	}
 	return data[0];
 }
+
 float3 gradient(float3 pos, Oct frame)
 {
-	pos = (pos - frame.lower) / (frame.higher - frame.lower);
+	pos = (pos - frame.lower) / frame.scale;
 	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
 	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
 	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
@@ -142,6 +112,15 @@ float3 ray(uint2 coord)
 	float3 dir = mul(float3(screendir, .5), inf.heading);
 	return normalize(dir);
 }
+
+
+RWTexture2D<float4> tex : register(u0);
+
+uint2 absoluteCoord(uint3 threadID, uint3 groupID)
+{
+	return threadID.xy + groupID.xy * uint2(groupSizeX, groupSizeY);
+}
+
 void set(float4 value, uint2 coord)
 {
 	tex[coord.xy] = value;//pow(value, 1 / 2.2);
@@ -150,8 +129,8 @@ void set(float4 value, uint2 coord)
 float2 box_intersect(Oct c, float3 pos, float3 dir)
 {
 	float3 inv_dir = 1 / dir;
-	float3 t1 = (c.lower - pos)*inv_dir;
-	float3 t2 = (c.higher - pos)*inv_dir;
+	float3 t1 = (c.lower - pos) * inv_dir;
+    float3 t2 = (c.higher() - pos) * inv_dir;
 
 	return float2(max(max(
 		min(t1.x, t2.x), 
