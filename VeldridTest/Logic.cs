@@ -21,7 +21,8 @@ namespace SDFbox
         public static bool debugGizmos = false;
         public static bool debugWindow = false;
         public static string loadPath = "";
-        public static float[] frames = new float[24];
+        public static float[] frames = new float[96];
+        public static int desiredFrameCount = 96;
         public static VertexModel vm;
 
         const float mSpeed = 0.2f;
@@ -208,6 +209,8 @@ namespace SDFbox
 
         public static void Update(TimeSpan t, InputSnapshot input)
         {
+            if (desiredFrameCount != frames.Length)
+                frames = new float[desiredFrameCount];
             float sec = (float) t.TotalSeconds;
             for (int i = frames.Length - 1; i > 0; i--) {
                 frames[i] = frames[i-1];
@@ -261,13 +264,14 @@ namespace SDFbox
         {
             double milliPerFrame = Math.Round(1000.0/time);
             double area = Program.ScreenSize.X * Program.ScreenSize.Y;
-            double nanoPerPixel = Math.Round(1000000000.0 / time / area);
+            //double nanoPerPixel = Math.Round(1000000000.0 / time / area);
+            string nanoPerPixel = (1000000000.0 * SdfMath.Average(frames) / area).ToString("F2");
             ImGui.StyleColorsClassic();
-
             if (ImGui.Begin("Debug", ImGuiWindowFlags.AlwaysAutoResize)) {
-                if (debugGizmos)
+                if (debugGizmos) {
                     ImGui.PlotLines("", ref frames[0], frames.Length, 0, $"{time} FPS - {nanoPerPixel} nspp", 0, 0.1f, new Vector2(200, 40));
-                else
+                    ImGui.DragInt("averaging time", ref desiredFrameCount, 1, 1, 96);
+                } else
                     ImGui.Text($"{time} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
 
                 ImGui.Text($"{Program.ScreenSize.X} x {Program.ScreenSize.Y} px");

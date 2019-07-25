@@ -26,5 +26,13 @@ namespace SDFbox
         {
             return a * (1 - p) + b * p;
         }
+        public static double Average(float[] values)
+        {
+            double total = 0;
+            foreach (float v in values) {
+                total += v;
+            }
+            return total / values.Length;
+        }
     }
 }

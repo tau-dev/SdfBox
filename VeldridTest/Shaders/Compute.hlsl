@@ -5,39 +5,41 @@
 #define groupSizeY 24
 #define OctCount 73
 
-struct Oct
+struct Cube
 {
     float3 lower;
     float scale;
+    
+    float3 higher()
+    {
+        return lower + scale;
+    }
+    bool inside(float3 pos)
+    {
+        return all(lower <= pos) && all(pos <= higher());
+    }
+};
 
+struct Oct
+{
+    Cube box;
     float4 vertsL;
     float4 vertsH;
 
     int parent;
 	int empty;
     int children;
-
-    float3 higher()
-    {
-        return lower + scale;
-    }
-
-	bool inside(float3 pos)
-	{
-        return all(lower <= pos) && all(pos <= higher());
-    }
+    
     float interpol_inside(float3 d)
     {
-        float cOO = lerp(vertsL.x, vertsL.y, d.x);
-        float cOI = lerp(vertsL.z, vertsL.w, d.x);
-        float cIO = lerp(vertsH.x, vertsH.y, d.x);
-        float cII = lerp(vertsH.z, vertsH.w, d.x);
-        return lerp(lerp(cOO, cOI, d.y),
-			lerp(cIO, cII, d.y), d.z);
+        float2 cO = lerp(vertsL.xz, vertsL.yw, d.x);
+        float2 cI = lerp(vertsH.xz, vertsH.yw, d.x);
+        return lerp(lerp(cO.x, cO.y, d.y),
+			lerp(cI.x, cI.y, d.y), d.z);
     }
 	float interpol_world(float3 pos)
 	{
-		float3 d = saturate((pos - lower) / scale); //smoothstep(lower, higher, pos);//
+		float3 d = saturate((pos - box.lower) / box.scale); //smoothstep(lower, higher, pos);//
 		return interpol_inside(d);
 	}
 };
@@ -59,16 +61,17 @@ cbuffer B : register(b0)
 {
 	Info inf;
 }
-Oct find(float3 pos, Oct c)
+Oct find(float3 pos)
 {
 	int index = 0;
 	int iterations = 0;
-	if (c.parent >= 0) {
-		do {
-			index = c.parent;
-			c = data[index];
-		} while (!c.inside(pos) && c.parent >= 0);
-	}
+    Oct c = data[index];
+    if (c.parent >= 0) {
+        do {
+            index = c.parent;
+            c = data[index];
+        } while (!c.box.inside(pos) && c.parent >= 0);
+    }
 	while (index < inf.buffer_size && iterations < 12) {
 		c = data[index];
 
@@ -76,7 +79,7 @@ Oct find(float3 pos, Oct c)
 			return c;
 		}
 
-        float3 direction = pos - (c.lower + c.scale / 2);
+        float3 direction = pos - (c.box.lower + c.box.scale / 2);
 		int p = 0;
 		if (direction.x > 0) {
 			p = 1;
@@ -95,7 +98,7 @@ Oct find(float3 pos, Oct c)
 
 float3 gradient(float3 pos, Oct frame)
 {
-	pos = (pos - frame.lower) / frame.scale;
+	pos = (pos - frame.box.lower) / frame.box.scale;
 	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
 	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
 	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
@@ -129,8 +132,8 @@ void set(float4 value, uint2 coord)
 float2 box_intersect(Oct c, float3 pos, float3 dir)
 {
 	float3 inv_dir = 1 / dir;
-	float3 t1 = (c.lower - pos) * inv_dir;
-    float3 t2 = (c.higher() - pos) * inv_dir;
+	float3 t1 = (c.box.lower - pos) * inv_dir;
+    float3 t2 = (c.box.higher() - pos) * inv_dir;
 
 	return float2(max(max(
 		min(t1.x, t2.x), 
@@ -150,7 +153,7 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 	uint2 coord = absoluteCoord(threadID, groupID);
     float3 dir = ray(coord);
 	float prox = 1;
-	Oct current = find(pos, data[0]);
+	Oct current = find(pos);
 	// remove multiplications?
 	int i;
 	for (i = 0; prox > inf.margin; i++) {
@@ -158,7 +161,7 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 			set(float4(0.05, 0.1, 0.4, i), coord);
 			return;
 		}
-		current = find(pos, current); //data[0];//find(pos);
+		current = find(pos); //data[0];//find(pos);
 		if (current.empty == 0) {
 			float2 res = box_intersect(current, pos, dir);
 			if (res.x < res.y) {
@@ -195,7 +198,7 @@ void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 			set(float4(attenuation, attenuation, attenuation, i+j), coord);
 			return;
 		}
-		current = find(pos, current);
+		current = find(pos);
 		if (current.empty == 0) {
 			pos = pos + dir * box_intersect(current, pos, dir).y;
 		}
