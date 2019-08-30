@@ -19,7 +19,7 @@ namespace SDFbox
         public static bool mouseDown = false;
         public const int GroupSize = 25;
         public static bool debugGizmos = false;
-        public static bool debugWindow = false;
+        public static bool debugWindow = true;
         public static string loadPath = "";
         public static float[] frames = new float[96];
         public static int desiredFrameCount = 96;
@@ -90,21 +90,24 @@ namespace SDFbox
 
         private static Dictionary<Key, bool> pressed;
 
-        public static OctS[] MakeData(string filename)
+        public static OctData MakeData(string filename)
         {
-            OctS[] data = new OctS[0];
+            OctData data;// = Sample();
+            //State.buffer_size = data.Length;
+            //return data;
+
             filename = AutocompleteFile(filename);
             string basename = Path.ChangeExtension(filename, null);
             
 
             if (Path.GetExtension(filename) == ".asdf") {
                 Debug.WriteLine("Loading from " + filename);
-                using (BinaryReader reader = new BinaryReader(File.Open(filename, FileMode.Open)))
-                    data = OctS.Deserialize(reader);
+                throw new NotImplementedException();
+                //using (BinaryReader reader = new BinaryReader(File.Open(filename, FileMode.Open)))
+                    //data = OctS.Deserialize(reader);
 
             } else if (Path.GetExtension(filename) == ".obj") {
-                Debug.WriteLine("Generating from " + filename);
-                Debug.WriteLine("Preprocessing...");
+                Debug.WriteLine("Generating from " + filename + "; Preprocessing...");
                 vm = new VertexModel(filename);//, Program.device, Program.commandList, Program.factory);
                 Debug.WriteLine("Building ASDF...");
 
@@ -114,13 +117,33 @@ namespace SDFbox
                 data = m.Cast();
 
                 Debug.WriteLine("Saving to " + basename + ".asdf");
-                using (BinaryWriter writer = new BinaryWriter(File.Create(basename + ".asdf")))
-                    OctS.Serialize(data, writer);
+                //using (BinaryWriter writer = new BinaryWriter(File.Create(basename + ".asdf")))
+                    //OctS.Serialize(data, writer);
             } else
                 throw new ArgumentException("Invalid " + Path.GetExtension(filename) + "; can only read .obj or .asdf files.");
 
             State.buffer_size = data.Length;
             return data;
+
+            OctData Sample()
+            {
+                var children = new Octree[8];
+                for (int i = 0; i < 8; i++) {
+                    var vals = new float[8];
+                    for (int j = 0; j < 8; j++) {
+                        vals[j] = dist(SdfMath.split(j) + SdfMath.split(i));
+                    }
+                    children[i] = new Octree(vals);
+                }
+                var mainvals = new float[8];
+                for (int i = 0; i < 8; i++) {
+                    mainvals[i] = dist(SdfMath.split(i)*2);
+                }
+                var t = new Octree(children, mainvals);
+
+                return new Model(t).Cast();
+            }
+            float dist(Int3 p) => ((p.Vector - Vector3.One).Length() - 0.6f)*0.5f;
         }
         public static string AutocompleteFile(string filename)
         {
@@ -153,20 +176,21 @@ namespace SDFbox
                     new Vertex(RgbaFloat.Green, 0, .04, 0),
                     new Vertex(RgbaFloat.Blue, 0, 0, 0),
                     new Vertex(RgbaFloat.Blue, 0, 0, .04),
-
+                    /*
                     new Vertex(RgbaFloat.Red, .96, 1, 1),
                     new Vertex(RgbaFloat.Red, 1, 1, 1),
                     new Vertex(RgbaFloat.Green, 1, .96, 1),
                     new Vertex(RgbaFloat.Green, 1, 1, 1),
                     new Vertex(RgbaFloat.Blue, 1, 1, .96),
-                    new Vertex(RgbaFloat.Blue, 1, 1, 1)
+                    new Vertex(RgbaFloat.Blue, 1, 1, 1)*/
                 };
                 for (int i = 0; i < 6; i++) {
-                    d[i].Position.Y *= -1;
-                    d[i].Position -= new Vector3(State.position.X, -State.position.Y, State.position.Z);
-                    d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(-heading.Y, heading.X, 0));
-                    //d[i].Position = Vector3.Transform(d[i].Position, Matrix4x4.CreateFromYawPitchRoll(0, heading.X, 0));
-                    d[i].Position = new Vector3(d[i].Position.X / d[i].Position.Z, d[i].Position.Y / d[i].Position.Z, Math.Sign(d[i].Position.Z));
+                    Vector3 p = d[i].Position - State.position - Vector3.UnitY;
+                    p *= new Vector3(1, -1, 1);
+                    Matrix4x4 m;
+                    Matrix4x4.Invert(Matrix4x4.CreateFromYawPitchRoll(heading.Y, heading.X, 0), out m);
+                    p = Vector3.Transform(p, m);
+                    d[i].Position = new Vector3(p.X / p.Z, p.Y / p.Z, Math.Sign(d[i].Position.Z)) + new Vector3(0.5f);
                 }
                 return d;
             }
@@ -196,6 +220,8 @@ namespace SDFbox
                 pressed[keyEvent.Key] = true;
                 if (keyEvent.Key == Key.F11)
                     Program.ToggleFullscreen();
+                else if (keyEvent.Key == Key.Space)
+                    debugWindow = !debugWindow;
             }
         }
         public static void KeyUp(KeyEvent keyEvent)
@@ -262,12 +288,15 @@ namespace SDFbox
 
         public static void MakeGUI(int time)
         {
+            if (!debugWindow)
+                return;
             double milliPerFrame = Math.Round(1000.0/time);
             double area = Program.ScreenSize.X * Program.ScreenSize.Y;
             //double nanoPerPixel = Math.Round(1000000000.0 / time / area);
             string nanoPerPixel = (1000000000.0 * SdfMath.Average(frames) / area).ToString("F2");
             ImGui.StyleColorsClassic();
-            if (ImGui.Begin("Debug", ImGuiWindowFlags.AlwaysAutoResize)) {
+
+            if (ImGui.Begin("Debug ([Space] to hide/show)", ImGuiWindowFlags.AlwaysAutoResize)) {
                 if (debugGizmos) {
                     ImGui.PlotLines("", ref frames[0], frames.Length, 0, $"{time} FPS - {nanoPerPixel} nspp", 0, 0.1f, new Vector2(200, 40));
                     ImGui.DragInt("averaging time", ref desiredFrameCount, 1, 1, 96);
@@ -280,6 +309,7 @@ namespace SDFbox
                     if (ImGui.Button("Reset")) {
                         Program.window.WindowState = WindowState.Normal;
                         Program.ScreenSize = new Vector2(720, 720);
+                        Program.window.WindowState = WindowState.Normal;
                     }
                     if (Program.window.WindowState != WindowState.BorderlessFullScreen)
                         ImGui.SameLine();
@@ -289,11 +319,11 @@ namespace SDFbox
                         Program.window.WindowState = WindowState.BorderlessFullScreen;
                 }
 
-                double value = Math.Round(Model.Sample(Program.model, State.position), 3);
-                int[] path = Model.PathTo(Program.model, State.position).ToArray();
+                //double value = Math.Round(Model.Sample(Program.model, State.position), 3);
+                //int[] path = Model.PathTo(Program.model, State.position).ToArray();
                 ImGui.Text($"Y-Rotation {Look.Y.ToString().PadLeft(6)}, X-Rotation {Look.X.ToString()}");
-                ImGui.Text($"SDF Value at {State.position}: {value.ToString().PadLeft(5)}");
-                ImGui.Text("In Quadrant " + string.Join(", ", path));
+                //ImGui.Text($"SDF Value at {State.position}: {value.ToString().PadLeft(5)}");
+                //ImGui.Text("In Quadrant " + string.Join(", ", path));
 
                 ImGui.SliderFloat("Light X", ref State.light.X, -1, 2);
                 ImGui.SliderFloat("Light Y", ref State.light.Y, -1, 2);

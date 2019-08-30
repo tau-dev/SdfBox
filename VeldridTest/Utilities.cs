@@ -50,13 +50,16 @@ namespace SDFbox
         }
         public BindableResource this[string s] {
             get {
-                return Resources[ResourceNames[s]];
+                int position;
+                if (!ResourceNames.TryGetValue(s, out position))
+                    throw new ArgumentException("No resource named " + s);
+                return Resources[position];
             }
             set {
-                if (!ResourceNames.ContainsKey(s))
-                    throw new FieldAccessException();
-                else
-                    Resources[ResourceNames[s]] = value;
+                int position;
+                if (!ResourceNames.TryGetValue(s, out position))
+                    throw new ArgumentException("No resource named " + s);
+                Resources[position] = value;
             }
         }
         public DeviceBuffer Buffer(string s)
@@ -127,6 +130,7 @@ namespace SDFbox
         }
         public void DispatchSized(CommandList cl, uint x, uint y, uint z)
         {
+
             Dispatch(cl,
                 (x + xGroupSize - 1) / xGroupSize,
                 (y + yGroupSize - 1) / yGroupSize,

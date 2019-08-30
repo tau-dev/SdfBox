@@ -15,36 +15,14 @@ namespace SDFbox
         //SaveModel save;
         const float HalfSqrt3 = 0.866025f;
         public static float precision = 0.002f;
-        public static int MaxDepth = 5;
+        public static int MaxDepth = 3;
         //public static float maxResolution = 0.004f;
 
         public Model(Octree c)
         {
             Tree = c;
         }
-        public Model(OctS[] c)
-        {
-            Tree = Octree.Load(c, 0);
-        }
-        /*public Model(SaveModel model)
-        {
-            save = model;
-            Tree = construct(new Queue<bool>(save.Hierachy));
-            Tree.Init(save, new Int3(0, 0, 0), 0);
 
-            Octree construct(Queue<bool> hierachy)
-            {
-                if (hierachy.Dequeue() == false) {
-                    return new Octree();
-                } else {
-                    Octree[] children = new Octree[8];
-                    for (int i = 0; i < 8; i++) {
-                        children[i] = construct(hierachy);
-                    }
-                    return new Octree(children);
-                }
-            }
-        }*/
         public Model(VertexModel vmodel)// : this(Utilities.Convert(vmodel))
         {
             Tree = construct(vmodel, 0, Vector3.Zero, vmodel.All());
@@ -72,15 +50,15 @@ namespace SDFbox
                 }
 
                 return build;
-            }
+            }/*
             float error(float center, float[] values, Vector3 pos)
             {
                 Vector3 test = Vector3.One / 2;
                 return Math.Abs(1 - SdfMath.Lerp3(new Vector8(values), test) / center);
-            }
+            }*/
         }
 
-
+        /*
         public static float Sample(OctS[] sdf, Vector3 pos)
         {
             int p = 0;
@@ -97,7 +75,7 @@ namespace SDFbox
             }
             OctS found = sdf[p];
             return SdfMath.Lerp3(found.verts, (pos - found.lower) / (found.lower + found.higher));
-        }
+        }*/
         public static List<int> PathTo(OctS[] sdf, Vector3 pos)
         {
             List<int> path = new List<int>();
@@ -116,7 +94,7 @@ namespace SDFbox
             }
             return path;
         }
-        public OctS[] Cast()
+        public OctData Cast()
         {
             return Tree.Cast();
         }
@@ -173,10 +151,12 @@ namespace SDFbox
             }
         }//*/
 
+
+        /*
         public static Octree Load(OctS[] raw, int position)
         {
             OctS point = raw[position];
-            Octree current = new Octree(point.verts.Array);
+            Octree current = new Octree(point.verts.SingleArray);
             if (point.children > 0) {
                 Octree[] children = new Octree[8];
                 for (int i = 0; i < 8; i++) {
@@ -185,30 +165,34 @@ namespace SDFbox
                 current.Children = children;
             }
             return current;
-        }
+        }*/
 
 
-        public OctS[] Cast()
+        public OctData Cast()
         {
             List<OctS> res = new List<OctS>();
+            List<Byte8> vals = new List<Byte8>();
             res.Add(new OctS());
-            Cast(res, 1, Vector3.Zero, -1, 0);
-            return res.ToArray();
+            vals.Add(new Byte8());
+            Cast(res, vals, 1, Vector3.Zero, -1, 0);
+            return new OctData(res.ToArray(), vals.ToArray());
         }
-        private void Cast(List<OctS> octs, float scale, Vector3 pos, int parent, int at)
+        private void Cast(List<OctS> octs, List<Byte8> values, float scale, Vector3 pos, int parent, int at)
         {
-            if (Children == null)
-                octs[at] = new OctS(parent, -1, Vertices, pos, scale);
-            else {
-                int start = octs.Count;
-                octs[at] = new OctS(parent, start, Vertices, pos, scale);
+            int childstart = -1;
+            if (Children != null) {
+                childstart = octs.Count;
+
                 for (int i = 0; i < 8; i++) {
                     octs.Add(new OctS());
+                    values.Add(new Byte8());
                 }
                 for (int i = 0; i < 8; i++) {
-                    Children[i].Cast(octs, scale / 2, pos + SdfMath.split(i).Vector * scale / 2, at, start + i);
+                    Children[i].Cast(octs, values, scale / 2, pos + SdfMath.split(i).Vector * scale / 2, at, childstart + i);
                 }
             }
+            octs[at] = new OctS(parent, childstart, Vertices, pos, scale);
+            values[at] = new Byte8(Vertices, scale);
         }
         public static void Reduce(ref Int3 pos, ref int level)
         {
@@ -263,7 +247,7 @@ namespace SDFbox
             return s;
         }
     }*/
-
+    
     struct Int3
     {
         public int X;

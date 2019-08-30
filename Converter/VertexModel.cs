@@ -33,6 +33,7 @@ namespace Converter
         public LoadResult RawData;
         //public Obj Raw;// { get; private set; }
         public DetailVertex[] xSorted; // TODO privatify
+        public float DetailScale = 0; // longest edge
         //public Vector3[] xSortedNormals;
         protected float Scale;
         protected Vector3 Offset;
@@ -171,12 +172,17 @@ namespace Converter
                         var b = RawData.Vertices[face[j+1].VertexIndex-1];
                         var c = RawData.Vertices[face[j+2].VertexIndex-1];
                         ordered[face[i].VertexIndex - 1].Add(a, b, c);
+                        DetailScale = Math.Max(DetailScale, LongestEdge(a, b, c));
                     }
                 }
             }
             ordered.Sort((x, y) => x.Pos.X.CompareTo(y.Pos.X));
             xSorted = ordered.ToArray();
 
+            float LongestEdge(Vertex a, Vertex b, Vertex c)
+            {
+                return 0;
+            }
             #region deprecated
             /*
             for (int i = 0; ordered.Count > 0; i++) {

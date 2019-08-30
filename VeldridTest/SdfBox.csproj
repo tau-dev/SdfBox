@@ -8,7 +8,7 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>SDFbox</RootNamespace>
     <AssemblyName>SdfBox</AssemblyName>
-    <TargetFrameworkVersion>v4.7.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <NuGetPackageImportStamp>
@@ -31,6 +31,7 @@
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
     <BootstrapperEnabled>true</BootstrapperEnabled>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -370,6 +371,10 @@
     <ProjectReference Include="..\Converter\Converter.csproj">
       <Project>{27f45aed-91fa-4034-b9d4-dd4b51866c45}</Project>
       <Name>Converter</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\HalfPrecisionFloat\HalfPrecisionFloat.csproj">
+      <Project>{95ad9450-834d-4a84-81f8-e56469cc4704}</Project>
+      <Name>HalfPrecisionFloat</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
