@@ -43,12 +43,6 @@ namespace SDFbox
         }
 
 
-        /*public static Info[] GetInfo {
-            get {
-                return new Info[] { new Info(new Float3x3(headingMat), position, dataSize) };
-            }
-        }*/
-
         static Vector2 heading = Vector2.Zero;
         public static Vector2 Heading {
             get {
@@ -92,9 +86,7 @@ namespace SDFbox
 
         public static OctData MakeData(string filename)
         {
-            OctData data;// = Sample();
-            //State.buffer_size = data.Length;
-            //return data;
+            OctData data;
 
             filename = AutocompleteFile(filename);
             string basename = Path.ChangeExtension(filename, null);

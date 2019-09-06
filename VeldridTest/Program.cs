@@ -596,7 +596,7 @@ namespace SDFbox
 
             for (int i = 0; i < values.Length; i++) {
                 Byte8 v = values[i];
-                int p = (i*4 % MaxTextureDim) + 2*MaxTextureDim * ((i*4) / MaxTextureDim);
+                int p = ((i*4) % MaxTextureDim) + 2*MaxTextureDim * ((i*4) / MaxTextureDim);
 
                 Values[p] =     v.S;
                 Values[p + 1] = v.T;

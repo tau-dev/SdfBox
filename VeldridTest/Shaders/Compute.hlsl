@@ -27,21 +27,21 @@ SamplerState samp : register(s0);
 Texture2D values : register(t0);
 
 static int index = 0;
+static float2 dimensions;
+
+float sam(float2 p)
+{
+    return values.SampleLevel(samp, (p + 0.5) * dimensions, 0);
+}
 float sample_at(float3 d, float scale)
 {
-    /*loat4 loadL = values.Load4(index * 8);
-    float4 loadH = values.Load4((index + 1) * 8);
-    float4 vertsL = (loadL / 255 - 0.5) * scale * 4;
-    float4 vertsH = (loadH / 255 - 0.5) * scale * 4;
-    float2 cO = lerp(vertsL.xz, vertsL.yw, d.x);
-    float2 cI = lerp(vertsH.xz, vertsH.yw, d.x);
-    return lerp(lerp(cO.x, cO.y, d.y),
-			lerp(cI.x, cI.y, d.y), d.z);*/
-    float2 dimensions;
-    values.GetDimensions(dimensions.x, dimensions.y);
-    float2 p = int2((index * 4) % textureWidth, index * 4 / textureWidth);
-    float loadL = values.SampleLevel(samp, (d.xy + p) / dimensions, 0);
-    float loadH = values.SampleLevel(samp, (d.xy + p + float2(2, 0)) / dimensions, 0);
+    float2 p = int2((index * 4) % textureWidth, index * 4 / textureWidth * 2);
+    float2 pl = (d.xy + p);
+    float2 ph = (d.xy + p + float2(2, 0));
+    /*float2 pa = float2(1, 0) / dimensions; //(d.xy + p + float2(2, 0)) / dimensions;
+    float sampa = values.SampleLevel(samp, pa, 0);*/
+    float loadL = sam(d.xy + p);
+    float loadH = sam(d.xy + p + float2(2, 0));
     return (lerp(loadL, loadH, d.z) - .25) * scale * 4;
 }
 
@@ -86,40 +86,43 @@ cbuffer B : register(b0)
 }
 Oct find(float3 pos)
 {
-	//int index = 0;
 	int iterations = 0;
     Oct c = data[index];
     
-    //if (c.parent >= 0) {
-        while (!c.box.inside(pos) && c.parent >= 0) {
-            index = c.parent;
-            c = data[index];
-        }
-    //}*/
-	while (index < inf.buffer_size && iterations < 12) {
-
-		if (c.children < 0)
-			return c;
-        
+    while (!c.box.inside(pos) && c.parent >= 0) {
+        index = c.parent;
+        c = data[index];
+    }
+    while (index < inf.buffer_size && iterations < 12 && c.children >= 0)
+    {
         int p = dot((int3) (saturate((pos - c.box.lower) / c.box.scale) * subdiv), int3(1, subdiv, subdiv * subdiv));
         index = c.children + p;
         c = data[index];
         iterations++;
     }
-	return data[0];
+	return c;
 }
 
+
+#define dd = values.SampleLevel(samp, ds + p, 0) - values.SampleLevel(samp, ds + ph, 0);
 float3 gradient(float3 pos, Oct frame)
 {
-	pos = (pos - frame.box.lower) / frame.box.scale;
-	float3 incX = float3(pos.x + inf.margin, pos.y, pos.z);
-	float3 incY = float3(pos.x, pos.y + inf.margin, pos.z);
-	float3 incZ = float3(pos.x, pos.y, pos.z + inf.margin);
-	float at = sample_at(pos, frame.box.scale);
-    float x = sample_at(pos, frame.box.scale);
-    float y = sample_at(pos, frame.box.scale);
-    float z = sample_at(pos, frame.box.scale);
-	return float3(x - at, y - at, z - at);
+    float3 d = saturate((pos - frame.box.lower) / frame.box.scale);
+    float2 p = int2((index * 4) % textureWidth, index * 4 / textureWidth * 2);
+    float2 ph = p + float2(2, 0);
+
+    float2 xzl = (float2(d.x, 0) + p);
+
+    float xl = lerp(sam(float2(0, d.y) + p), sam(float2(0, d.y) + ph), d.z);
+    float xh = lerp(sam(float2(1, d.y) + p), sam(float2(1, d.y) + ph), d.z);
+
+    float yl = lerp(sam(float2(d.x, 0) + p), sam(float2(d.x, 0) + ph), d.z);
+    float yh = lerp(sam(float2(d.x, 1) + p), sam(float2(d.x, 1) + ph), d.z);
+    
+    float zl = sam(d.xy + p);
+    float zh = sam(d.xy + ph);
+
+    return float3(xh-xl, yh-yl, zh-zl);
 }
 
 float3 ray(uint2 coord)
@@ -160,14 +163,16 @@ float2 box_intersect(Oct c, float3 pos, float3 dir)
 
 
 [numthreads(groupSizeX, groupSizeY, 1)]
-void main(uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
+void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 {
     float3 pos = inf.position;
-	uint2 coord = absoluteCoord(threadID, groupID);
-    float3 dir = ray(coord);
+    values.GetDimensions(dimensions.x, dimensions.y);
+    dimensions = 1 / dimensions;
+
+    float3 dir = ray(coord.xy);
 	float prox = 1;
     int pointer;
-	Oct current = find(pos);
+    Oct current = find(pos);
 	// remove multiplications?
 	int i;
 	for (i = 0; prox > inf.margin; i++) {

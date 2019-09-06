@@ -112,13 +112,8 @@ namespace SDFbox
             yGroupSize = d.yGroupSize;
             zGroupSize = d.zGroupSize;
 
-            ComputePipelineDescription pipelineDescription = new ComputePipelineDescription {
-                ResourceLayouts = new ResourceLayout[] { Layout },
-                ComputeShader = Shader,
-                ThreadGroupSizeX = 25,
-                ThreadGroupSizeY = 25
-            };
-            pipelineDescription.ThreadGroupSizeX = 1;
+            ComputePipelineDescription pipelineDescription = 
+                new ComputePipelineDescription(Shader, Layout, xGroupSize, yGroupSize, zGroupSize);
 
             Pipeline = factory.CreateComputePipeline(pipelineDescription);
         }

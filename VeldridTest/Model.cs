@@ -13,9 +13,9 @@ namespace SDFbox
         public Vector3 Position;
         Matrix4x4 Rotation;
         //SaveModel save;
-        const float HalfSqrt3 = 0.866025f;
+        const float HalfSqrt3 = 0.866025404f;
         public static float precision = 0.002f;
-        public static int MaxDepth = 3;
+        public static int MaxDepth = 6;
         //public static float maxResolution = 0.004f;
 
         public Model(Octree c)
@@ -50,32 +50,9 @@ namespace SDFbox
                 }
 
                 return build;
-            }/*
-            float error(float center, float[] values, Vector3 pos)
-            {
-                Vector3 test = Vector3.One / 2;
-                return Math.Abs(1 - SdfMath.Lerp3(new Vector8(values), test) / center);
-            }*/
+            }
         }
 
-        /*
-        public static float Sample(OctS[] sdf, Vector3 pos)
-        {
-            int p = 0;
-            while (sdf[p].children != -1) {
-                Vector3 direction = pos - (sdf[p].lower + sdf[p].higher) / 2;
-                int delta = 0;
-                if (direction.X > 0)
-                    delta = 1;
-                if (direction.Y > 0)
-                    delta += 2;
-                if (direction.Z > 0)
-                    delta += 4;
-                p = sdf[p].children + delta;
-            }
-            OctS found = sdf[p];
-            return SdfMath.Lerp3(found.verts, (pos - found.lower) / (found.lower + found.higher));
-        }*/
         public static List<int> PathTo(OctS[] sdf, Vector3 pos)
         {
             List<int> path = new List<int>();
@@ -136,38 +113,6 @@ namespace SDFbox
             }
         }
 
-        /*internal void Init(SaveModel data, Int3 pos, int level)
-        {
-            Vertices = new float[8];
-
-            for (int i = 0; i < 8; i++) {
-                Vertices[i] = data.Values[(pos + SdfMath.split(i))*data.ScaleLevel(level)];
-            }
-
-            if (Children != null) {
-                for (int i = 0; i < 8; i++) {
-                    Children[i].Init(data, pos * 2 + SdfMath.split(i), level + 1);
-                }
-            }
-        }//*/
-
-
-        /*
-        public static Octree Load(OctS[] raw, int position)
-        {
-            OctS point = raw[position];
-            Octree current = new Octree(point.verts.SingleArray);
-            if (point.children > 0) {
-                Octree[] children = new Octree[8];
-                for (int i = 0; i < 8; i++) {
-                    children[i] = Load(raw, point.children + i);
-                }
-                current.Children = children;
-            }
-            return current;
-        }*/
-
-
         public OctData Cast()
         {
             List<OctS> res = new List<OctS>();
@@ -202,51 +147,6 @@ namespace SDFbox
             }
         }
     }
-    // TODO  deprecate this
-    /*
-    [Serializable]
-    class SaveModel
-    {
-        public bool[] Hierachy { get; }
-        public int Depth { get; } // 0-indexed depth of the Hierachy
-        public Dictionary<Int3, float> Values { get; }
-
-        public SaveModel(bool[] hierachy, int depth)
-        {
-            Hierachy = hierachy;
-            Depth = depth;
-            Values = new Dictionary<Int3, float>();
-        }
-
-        public void Add(Int3 pos, int level, float value)
-        {
-            pos *= ScaleLevel(level);
-
-            if (Values.ContainsKey(pos)) {
-                Values.Remove(pos);
-            }
-            Values.Add(pos, value);
-        }
-        public void Add(int x, int y, int z, int level, float v)
-        {
-            Int3 pos = new Int3(x, y, z);
-            pos *= ScaleLevel(level);
-
-            if (Values.ContainsKey(pos)) {
-                Values.Remove(pos);
-            }
-            Values.Add(pos, v);
-        }
-
-        public int ScaleLevel(int level)
-        {
-            int s = 1;
-            for (int i = 0; i < Depth - level; i++) {
-                s *= 2;
-            }
-            return s;
-        }
-    }*/
     
     struct Int3
     {
