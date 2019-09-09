@@ -279,48 +279,20 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="models\bunny.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\bunnyNew.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\dragon.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\dragonB.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\dragonLarge.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\Flach.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\MendedMinasTirith.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\Mesh.obj.mtl">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\MinasTirithB.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\model.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\shuttle.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\Sphaerus.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="models\utah.obj">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <None Include="models\bunny.obj" />
+    <None Include="models\bunnyNew.obj" />
+    <None Include="models\dragon.obj" />
+    <None Include="models\dragonB.obj" />
+    <None Include="models\dragonLarge.obj" />
+    <None Include="models\Flach.obj" />
+    <None Include="models\MendedMinasTirith.obj" />
+    <None Include="models\Mesh.obj.mtl" />
+    <None Include="models\MinasTirithB.obj" />
+    <None Include="models\model.obj" />
+    <None Include="models\shuttle.obj" />
+    <None Include="models\Sphaerus.obj" />
+    <None Include="models\utah.obj" />
     <None Include="packages.config" />
-    <None Include="Shaders\compile-hlsl.cmd" />
-    <None Include="Shaders\compile-spirv.cmd" />
     <None Include="Shaders\Fragment.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <EnableDebuggingInfo>True</EnableDebuggingInfo>

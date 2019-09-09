@@ -1,5 +1,4 @@
 ﻿
-using Converter;
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
@@ -7,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Text;
 using Veldrid;
 using Veldrid.Sdl2;
 
@@ -21,9 +21,9 @@ namespace SDFbox
         public static bool debugGizmos = false;
         public static bool debugWindow = true;
         public static string loadPath = "";
+        public static ImGuiConsole console = new ImGuiConsole(80, 64);
         public static float[] frames = new float[96];
         public static int desiredFrameCount = 96;
-        public static VertexModel vm;
 
         const float mSpeed = 0.2f;
         const float tSpeed = 0.1f;
@@ -31,14 +31,13 @@ namespace SDFbox
             position = new Vector3(0.5f, 0.5f, 0.1f),
             light = new Vector3(0f, 0f, 0f),
             strength = .5f,
-            margin = 0.001f,
-            screen_size = new Vector2(xSize, ySize)
+            margin = .001f,
+            screen_size = new Vector2(xSize, ySize),
+            fov = 1
         };
         public static DrawInfo DrawState {
             get {
-                return new DrawInfo() {
-                        showDebug = debugGizmos
-                    };
+                return new DrawInfo() { showDebug = debugGizmos };
             }
         }
 
@@ -90,31 +89,20 @@ namespace SDFbox
 
             filename = AutocompleteFile(filename);
             string basename = Path.ChangeExtension(filename, null);
-            
+            FileFormat format = FormatOf(filename);
 
-            if (Path.GetExtension(filename) == ".asdf") {
+            if (format == FileFormat.ASDF) {
                 Debug.WriteLine("Loading from " + filename);
                 throw new NotImplementedException();
-                //using (BinaryReader reader = new BinaryReader(File.Open(filename, FileMode.Open)))
-                    //data = OctS.Deserialize(reader);
 
-            } else if (Path.GetExtension(filename) == ".obj") {
-                Debug.WriteLine("Generating from " + filename + "; Preprocessing...");
-                vm = new VertexModel(filename);//, Program.device, Program.commandList, Program.factory);
-                Debug.WriteLine("Building ASDF...");
-
-                Model m = new Model(vm);
-                //Model m = new Model(Generator.GpuGenerator.Generate(vm, Program.device, Program.commandList, Program.factory));
-
-                data = m.Cast();
-
-                Debug.WriteLine("Saving to " + basename + ".asdf");
-                //using (BinaryWriter writer = new BinaryWriter(File.Create(basename + ".asdf")))
-                    //OctS.Serialize(data, writer);
+            } else if (MustImport(format)) {
+                var raw = OctData.NativeOctData.Generate(filename, format);
+                data = new OctData(raw);
+                OctData.NativeOctData.Free(raw);
             } else
                 throw new ArgumentException("Invalid " + Path.GetExtension(filename) + "; can only read .obj or .asdf files.");
 
-            State.buffer_size = data.Length;
+            State.buffer_size = (uint) data.Length;
             return data;
 
             OctData Sample()
@@ -137,16 +125,35 @@ namespace SDFbox
             }
             float dist(Int3 p) => ((p.Vector - Vector3.One).Length() - 0.6f)*0.5f;
         }
+        public static FileFormat FormatOf(string filename)
+        {
+            switch (Path.GetExtension(filename)) {
+                case ".asdf":
+                    return FileFormat.ASDF;
+                case ".ply":
+                    return FileFormat.Stanford;
+                case ".obj":
+                    return FileFormat.Wavefront;
+                default:
+                    return (FileFormat) (-1);
+            }
+        }
         public static string AutocompleteFile(string filename)
         {
             if (File.Exists(filename))
                 return filename;
             else if (File.Exists(filename + ".asdf"))
                 return filename + ".asdf";
+            else if (File.Exists(filename + ".ply"))
+                return filename + ".ply";
             else if (File.Exists(filename + ".obj"))
                 return filename + ".obj";
             else
                 return null;
+        }
+        public static bool MustImport(FileFormat f)
+        {
+            return f == FileFormat.Wavefront || f == FileFormat.Stanford;
         }
 
         public static Vertex[] ScreenQuads {
@@ -210,10 +217,13 @@ namespace SDFbox
         {
             if (!ImGui.GetIO().WantCaptureKeyboard) {
                 pressed[keyEvent.Key] = true;
+
                 if (keyEvent.Key == Key.F11)
                     Program.ToggleFullscreen();
                 else if (keyEvent.Key == Key.Space)
                     debugWindow = !debugWindow;
+                else if (keyEvent.Key == Key.X)
+                    debugGizmos = !debugGizmos;
             }
         }
         public static void KeyUp(KeyEvent keyEvent)
@@ -266,6 +276,7 @@ namespace SDFbox
                 Key.Right, Key.Left, Key.Up, Key.Down,
                 Key.W, Key.S, Key.A, Key.D, Key.LShift, Key.LControl,
                 Key.Number8, Key.Number2, Key.Number6, Key.Number4, Key.Number9, Key.Number3,
+                Key.X, Key.Space
 
             };
             foreach (Key k in toCheck) {
@@ -284,16 +295,12 @@ namespace SDFbox
                 return;
             double milliPerFrame = Math.Round(1000.0/time);
             double area = Program.ScreenSize.X * Program.ScreenSize.Y;
-            //double nanoPerPixel = Math.Round(1000000000.0 / time / area);
+
             string nanoPerPixel = (1000000000.0 * SdfMath.Average(frames) / area).ToString("F2");
             ImGui.StyleColorsClassic();
 
-            if (ImGui.Begin("Debug ([Space] to hide/show)", ImGuiWindowFlags.AlwaysAutoResize)) {
-                if (debugGizmos) {
-                    ImGui.PlotLines("", ref frames[0], frames.Length, 0, $"{time} FPS - {nanoPerPixel} nspp", 0, 0.1f, new Vector2(200, 40));
-                    ImGui.DragInt("averaging time", ref desiredFrameCount, 1, 1, 96);
-                } else
-                    ImGui.Text($"{time} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
+            if (ImGui.Begin("Debug window ([space] to hide/show)", ImGuiWindowFlags.AlwaysAutoResize)) {
+                
 
                 ImGui.Text($"{Program.ScreenSize.X} x {Program.ScreenSize.Y} px");
                 ImGui.SameLine();
@@ -306,40 +313,89 @@ namespace SDFbox
                     if (Program.window.WindowState != WindowState.BorderlessFullScreen)
                         ImGui.SameLine();
                 }
-                if (Program.window.WindowState != WindowState.BorderlessFullScreen) {
+                if (Program.window.WindowState != WindowState.BorderlessFullScreen)
                     if (ImGui.Button("Fullscreen [F11]"))
                         Program.window.WindowState = WindowState.BorderlessFullScreen;
-                }
 
-                //double value = Math.Round(Model.Sample(Program.model, State.position), 3);
-                //int[] path = Model.PathTo(Program.model, State.position).ToArray();
+
                 ImGui.Text($"Y-Rotation {Look.Y.ToString().PadLeft(6)}, X-Rotation {Look.X.ToString()}");
-                //ImGui.Text($"SDF Value at {State.position}: {value.ToString().PadLeft(5)}");
-                //ImGui.Text("In Quadrant " + string.Join(", ", path));
-
                 ImGui.SliderFloat("Light X", ref State.light.X, -1, 2);
                 ImGui.SliderFloat("Light Y", ref State.light.Y, -1, 2);
                 ImGui.SliderFloat("Light Z", ref State.light.Z, -1, 2);
                 ImGui.SliderFloat("Light Intensity", ref State.strength, 0, 4);
-                
-                bool submitted = ImGui.InputText($"Load File", ref loadPath, 128, ImGuiInputTextFlags.EnterReturnsTrue);
+                ImGui.SliderFloat("FOV", ref State.fov, 0.05f, 1.5f);
+
+                bool submitted = ImGui.InputText("Load File", ref loadPath, 128, ImGuiInputTextFlags.EnterReturnsTrue);
                 string complete = AutocompleteFile(loadPath.Replace('/', '\\'));
                 if (complete != null) {
                     string buttonText = "Load";
-                    if (Path.GetExtension(complete) == ".obj") {
+                    if (MustImport(FormatOf(complete))) {
                         ImGui.InputInt("Resolution Level", ref Model.MaxDepth);
                         buttonText = "Import";
                     }
-
-                    if (submitted ||  ImGui.Button(buttonText))
+                    if (submitted || ImGui.Button(buttonText))
                         Program.Load(loadPath);
                 }
                 
                 ImGui.Checkbox("Show Debug Gizmos", ref debugGizmos);
+                if (debugGizmos) {
+                    ImGui.PlotLines("", ref frames[0], frames.Length, 0, $"{time} FPS - {nanoPerPixel} nspp", 0, 0.1f, new Vector2(200, 40));
+                    ImGui.DragInt("averaging time", ref desiredFrameCount, 1, 1, 96);
+                    console.Render();
+                } else
+                    ImGui.Text($"{time} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
             }
-
-            //data.CmdListsRange[0].CmdBuffer[0].
         }
+    }
+
+    class ImGuiConsole : TextWriter
+    {
+        public int BufferLength { get; }
+        public int BufferWidth { get; }
+        List<string> lines = new List<string>();
+        StringBuilder builder = new StringBuilder();
+        public override Encoding Encoding => Encoding.UTF8;
+        public ImGuiConsole(int bufferlength, int width)
+        {
+            BufferLength = bufferlength;
+            BufferWidth = width;
+            NewLine = "\n";
+        }
+
+        public void Render()
+        {
+            StringBuilder result = new StringBuilder();
+            foreach (var line in lines) {
+                result.AppendLine(line);
+                //ImGui.Text(line);
+            }
+            result.Append(builder.ToString());
+            string output = result.ToString();
+            ImGui.InputTextMultiline("", ref output, 1024, new Vector2(7*BufferWidth, 128), ImGuiInputTextFlags.ReadOnly);
+        }
+        public override void Write(string value)
+        {
+            foreach (char c in value) {
+                if (c == '\n' || builder.Length >= BufferWidth) {
+                    lines.Add(builder.ToString());
+                    builder.Clear();
+                } else
+                    builder.Append(c);
+            }
+            while (lines.Count > BufferLength)
+                lines.RemoveAt(0);
+        }
+        public override void WriteLine(string value)
+        {
+            Write(value + '\n');
+        }
+    }
+
+    enum FileFormat
+    {
+        ASDF,
+        Stanford,
+        Wavefront
     }
 
     [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 112)]
@@ -349,10 +405,11 @@ namespace SDFbox
         public Vector3 position;
         public float margin;
         public Vector2 screen_size;
-        public int buffer_size;
+        public uint buffer_size;
         public float limit;
         public Vector3 light;
         public float strength;
+        public float fov;
     }
     [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 16)]
     struct DrawInfo
@@ -396,6 +453,5 @@ namespace SDFbox
             x2 = 0;
             x3 = 0;
         }
-
     }
 }

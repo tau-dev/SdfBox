@@ -1,4 +1,5 @@
-﻿
+﻿//#define USE_DEBUG_GENERATOR
+
 using ImGuiNET;
 using System;
 using System.Collections.Generic;
@@ -9,8 +10,7 @@ using System.Runtime.InteropServices;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
-using Generator;
-using System.Text;
+using System.Threading.Tasks;
 
 /* TODO
  * Modeling
@@ -34,6 +34,7 @@ namespace SDFbox
         static ComputeUnit compute;
         static VertFragUnit renderer;
         static VertFragUnit uiRenderer;
+        static Task<OctData> loader = null;
 #if DEBUG
         public const bool DebugMode = true;
 #else
@@ -42,13 +43,17 @@ namespace SDFbox
 
         static void Main(string[] args)
         {
+            Console.SetOut(Logic.console);
+            Debug.Listeners.Add(new TextWriterTraceListener(Logic.console));
+            model = Logic.MakeData(args[0]);
+
             window = Utilities.MakeWindow(720, 720);
             Logic.Init(window);
             window.Resized += Resize;
 
             FPS fpsCounter = new FPS();
             device = VeldridStartup.CreateGraphicsDevice(window, new GraphicsDeviceOptions(DebugMode, null, false, ResourceBindingModel.Improved));
-            CreateResources(args[0]);
+            CreateResources();
             DateTime start = DateTime.Now;
             TimeSpan delta = TimeSpan.FromSeconds(0);
             Logic.Heading = Logic.Heading;
@@ -56,6 +61,13 @@ namespace SDFbox
             window.WindowState = WindowState.Maximized;
 
             while (window.Exists) {
+                if (loader != null && loader.IsCompleted) {
+                    model = loader.Result;
+                    compute["data"] = model.StructBuffer();
+                    compute["values"] = model.ValueTexture();
+                    compute.Update(factory);
+                    loader = null;
+                }
                 delta = DateTime.Now - start;
                 start = DateTime.Now;
 
@@ -73,8 +85,6 @@ namespace SDFbox
         {
             device.UpdateBuffer(compute.Buffer("info"), 0, Logic.State);
             device.UpdateBuffer(renderer.Buffer("info"), 0, Logic.DrawState);
-
-            Logic.vm?.Inside(Vector3.Zero, 0);
 
             var cl = commandList;
             /**
@@ -105,7 +115,7 @@ namespace SDFbox
         }
 
 
-        static void CreateResources(string path)
+        static void CreateResources()
         {
             factory = device.ResourceFactory;
             commandList = factory.CreateCommandList();
@@ -132,7 +142,6 @@ namespace SDFbox
             renderDesc.AddResource("info", ResourceKind.UniformBuffer, drawUBuffer);
             renderer = new VertFragUnit(factory, renderDesc);
 
-            model = Logic.MakeData(path);
             var infoUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
             var compDesc = new ComputeUnit.Description(LoadShader("Compute", ShaderStages.Compute)) {
@@ -162,10 +171,10 @@ namespace SDFbox
         }
         public static void Load(string path)
         {
-            model = Logic.MakeData(path);
-            compute["data"] = model.StructBuffer();
-            compute["values"] = model.ValueTexture();
-            compute.Update(factory);
+            if (loader == null) {
+                loader = new Task<OctData>(() => Logic.MakeData(path));
+                loader.Start();
+            }
         }
         public static DeviceBuffer MakeBuffer<T>(T[] data, BufferUsage usage, uint size = 0, bool raw = false) where T : struct
         {
@@ -243,7 +252,7 @@ namespace SDFbox
                     break;
             }
             string path = Path.Combine(AppContext.BaseDirectory, "Shaders", $"{name}.{extension}");
-            Debug.WriteLine("Loading shader: " + path);
+            //Debug.WriteLine("Loading shader: " + path);
 
             List<byte> shaderBytes = new List<byte>();
             foreach (string inc in include) {
@@ -578,6 +587,7 @@ namespace SDFbox
                 reader.ReadByte());
         }
     }
+
     class OctData
     {
         public OctS[] Structs;
@@ -619,6 +629,11 @@ namespace SDFbox
             Structs = frames.ToArray();
             Values = values.ToArray();
         }
+        public OctData(NativeOctData raw) : this(raw.ManagedStructs(), raw.ManagedValues())
+        {
+
+        }
+
         public Texture ValueTexture() {
             var desc = new TextureDescription {
                 Type = TextureType.Texture2D,
@@ -648,6 +663,97 @@ namespace SDFbox
         public DeviceBuffer StructBuffer()
         {
             return Program.MakeBuffer(Structs, BufferUsage.StructuredBufferReadOnly);
+        }
+
+        internal static void Serialize(OctData data, BinaryWriter writer)
+        {
+            throw new NotImplementedException();
+        }
+
+        public struct NativeOctData
+        {
+            public uint Length;
+            public IntPtr Structs;
+            public IntPtr Values;
+#if DEBUG && USE_DEBUG_GENERATOR
+            const string SdfGenPath = "../../../Debug/SdfGen.dll";
+#else
+            const string SdfGenPath = "../../../Release/SdfGen.dll";
+#endif
+
+            public OctS[] ManagedStructs()
+            {
+                var s = new OctS[Length];
+                for (int i = 0; i < Length; i++) {
+                    IntPtr sptr = new IntPtr(Structs.ToInt64() + i * PackedSize());
+                    s[i] = Marshal.PtrToStructure<OctS>(sptr);
+                }
+                return s;
+
+                int PackedSize()
+                {
+                    int pack = typeof(OctS).StructLayoutAttribute.Pack;
+                    return (Marshal.SizeOf(typeof(OctS)) + pack - 1) / pack * pack;
+                }
+            }
+            public Byte8[] ManagedValues()
+            {
+                var v = new Byte8[Length];
+                for (int i = 0; i < Length; i++) {
+                    IntPtr bptr = new IntPtr(Values.ToInt64() + i * 8);
+                    v[i] = Marshal.PtrToStructure<Byte8>(bptr);
+                }
+                return v;
+            }
+
+            public static NativeOctData Generate(string path, FileFormat type)
+            {
+                Debug.WriteLine("Generating from " + path + ".");
+                Debug.Write("Loading data...  ");
+                var start = DateTime.Now;
+                IntPtr vertices;
+                switch (type) {
+                    case FileFormat.Stanford:
+                        vertices  = LoadPly(path);
+                        break;
+                    case FileFormat.Wavefront:
+                        vertices = LoadObj(path);
+                        break;
+                    case FileFormat.ASDF:
+                    default:
+                        throw new NotImplementedException();
+                }
+                
+                Time(start);
+
+                Debug.Write("Building ASDF... ");
+                start = DateTime.Now;
+                var nod = SdfGen(vertices, Model.MaxDepth);
+                Time(start);
+
+                return nod;
+
+                void Time(DateTime begin)
+                {
+                    Debug.WriteLine((DateTime.Now - begin).TotalSeconds.ToString("F3") + " s");
+                }
+            }
+
+            [DllImport(SdfGenPath)]
+            private static extern IntPtr LoadObj([MarshalAs(UnmanagedType.LPStr)] string path);
+            [DllImport(SdfGenPath)]
+            private static extern IntPtr LoadPly([MarshalAs(UnmanagedType.LPStr)] string path);
+            [DllImport(SdfGenPath)]
+            private static extern NativeOctData SdfGen(IntPtr data, int depth);
+
+
+            [DllImport(SdfGenPath)]
+            public static extern void Free(NativeOctData x);
+        }
+        struct NativeVertex
+        {
+            public Vector3 pos;
+            public Vector3 normal;
         }
     }
 }

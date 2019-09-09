@@ -26,12 +26,12 @@ SamplerState samp : register(s0);
 
 Texture2D values : register(t0);
 
-static int index = 0;
+static uint index = 0;
 static float2 dimensions;
 
 float sam(float2 p)
 {
-    return values.SampleLevel(samp, (p + 0.5) * dimensions, 0);
+    return values.SampleLevel(samp, (p + float2(.5, .5)) * dimensions, 0).x;
 }
 float sample_at(float3 d, float scale)
 {
@@ -73,10 +73,11 @@ struct Info
 	float3 position;
 	float margin;
 	float2 screen_size;
-	int buffer_size;
+	uint buffer_size;
 	float limit;
 	float3 light;
 	float strength;
+    float fov;
 };
 
 StructuredBuffer<Oct> data : register(t1);
@@ -104,7 +105,7 @@ Oct find(float3 pos)
 }
 
 
-#define dd = values.SampleLevel(samp, ds + p, 0) - values.SampleLevel(samp, ds + ph, 0);
+
 float3 gradient(float3 pos, Oct frame)
 {
     float3 d = saturate((pos - frame.box.lower) / frame.box.scale);
@@ -125,41 +126,37 @@ float3 gradient(float3 pos, Oct frame)
     return float3(xh-xl, yh-yl, zh-zl);
 }
 
+float2 box_intersect(Oct c, float3 pos, float3 dir)
+{
+    float3 inv_dir = 1 / dir;
+    float3 t1 = (c.box.lower - pos) * inv_dir;
+    float3 t2 = (c.box.higher() - pos) * inv_dir;
+
+    return float2(max(max(
+		min(t1.x, t2.x),
+		min(t1.y, t2.y)),
+		min(t1.z, t2.z)), // three intersections behind pos
+	min(min(
+		max(t1.x, t2.x),
+		max(t1.y, t2.y)),
+		max(t1.z, t2.z))); // three intersections after pos
+}
+
 float3 ray(uint2 coord)
 {
 	float2 screendir = (float2)coord / inf.screen_size.y - float2( inf.screen_size.x / inf.screen_size.y * .5, .5);
-	float3 dir = mul(float3(screendir, .5), inf.heading);
+	float3 dir = mul(float3(screendir * inf.fov, .5), inf.heading);
 	return normalize(dir);
 }
 
 
 RWTexture2D<float4> tex : register(u0);
 
-uint2 absoluteCoord(uint3 threadID, uint3 groupID)
-{
-	return threadID.xy + groupID.xy * uint2(groupSizeX, groupSizeY);
-}
-
 void set(float4 value, uint2 coord)
 {
 	tex[coord.xy] = value;//pow(value, 1 / 2.2);
 }
 
-float2 box_intersect(Oct c, float3 pos, float3 dir)
-{
-	float3 inv_dir = 1 / dir;
-	float3 t1 = (c.box.lower - pos) * inv_dir;
-    float3 t2 = (c.box.higher() - pos) * inv_dir;
-
-	return float2(max(max(
-		min(t1.x, t2.x), 
-		min(t1.y, t2.y)), 
-		min(t1.z, t2.z)), // three intersections behind pos
-	min(min(
-		max(t1.x, t2.x), 
-		max(t1.y, t2.y)), 
-		max(t1.z, t2.z))); // three intersections after pos
-}
 
 
 [numthreads(groupSizeX, groupSizeY, 1)]
