@@ -53,24 +53,6 @@ namespace SDFbox
             }
         }
 
-        public static List<int> PathTo(OctS[] sdf, Vector3 pos)
-        {
-            List<int> path = new List<int>();
-            int p = 0;
-            while (sdf[p].children != -1) {
-                Vector3 direction = pos - (sdf[p].lower + sdf[p].higher) / 2;
-                int delta = 0;
-                if (direction.X > 0)
-                    delta = 1;
-                if (direction.Y > 0)
-                    delta += 2;
-                if (direction.Z > 0)
-                    delta += 4;
-                path.Add(delta);
-                p = sdf[p].children + delta;
-            }
-            return path;
-        }
         public OctData Cast()
         {
             return Tree.Cast();
@@ -115,28 +97,28 @@ namespace SDFbox
 
         public OctData Cast()
         {
-            List<OctS> res = new List<OctS>();
+            List<OctLean> res = new List<OctLean>();
             List<Byte8> vals = new List<Byte8>();
-            res.Add(new OctS());
+            res.Add(new OctLean());
             vals.Add(new Byte8());
             Cast(res, vals, 1, Vector3.Zero, -1, 0);
             return new OctData(res.ToArray(), vals.ToArray());
         }
-        private void Cast(List<OctS> octs, List<Byte8> values, float scale, Vector3 pos, int parent, int at)
+        private void Cast(List<OctLean> octs, List<Byte8> values, float scale, Vector3 pos, int parent, int at)
         {
             int childstart = -1;
             if (Children != null) {
                 childstart = octs.Count;
 
                 for (int i = 0; i < 8; i++) {
-                    octs.Add(new OctS());
+                    octs.Add(new OctLean());
                     values.Add(new Byte8());
                 }
                 for (int i = 0; i < 8; i++) {
                     Children[i].Cast(octs, values, scale / 2, pos + SdfMath.split(i).Vector * scale / 2, at, childstart + i);
                 }
             }
-            octs[at] = new OctS(parent, childstart, Vertices, pos, scale);
+            octs[at] = new OctLean(parent, childstart);
             values[at] = new Byte8(Vertices, scale);
         }
         public static void Reduce(ref Int3 pos, ref int level)

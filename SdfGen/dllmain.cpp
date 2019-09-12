@@ -17,21 +17,13 @@ int MaxDepth = 6;
 
 struct OctS
 {
-	Vector3 Lower;
-	float Scale;
-
-	int Parent;
-	int Empty;
-	int Children;
-	int __pad1;
+	int32_t Parent;
+	int32_t Children;
 
 	OctS() { }
-	OctS(Vector3 lower, float scale, int parent)
+	OctS(int parent)
 	{
-		Lower = lower;
-		Scale = scale;
 		Parent = parent;
-		Empty = true;
 		Children = -1;
 	}
 };
@@ -53,37 +45,8 @@ Vector3 GlobalOffset = Vector3(0);
 vector<OctS> octs;
 vector<OctVerts> vals;
 
-/*
-vector<Vertex> LoadFrom(string filename)
-{
-	ifstream file(filename);
-	tinyobj::attrib_t attrib;
-	vector<tinyobj::shape_t> shapes;
-	vector<tinyobj::material_t> materials;
-	string warn;
-	string err;
-	tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &file);
-	shapes[0].mesh.indices[0];
 
-	int facevertcount = shapes[0].mesh.indices.size();
-	vector<Vertex> x;
-	vector<Vector3> normals;
 
-	int vertcount = attrib.vertices.size();
-	for (index i = 0; i < vertcount; i++) {
-		x.push_back({ Vector3(attrib.vertices[i * 3], attrib.vertices[i * 3 + 1], attrib.vertices[i * 3 + 2]), 0 });
-	}
-	int normcount = attrib.normals.size();
-	for (index i = 0; i < vertcount; i++) {
-		normals.push_back(Vector3(attrib.normals[i * 3], attrib.normals[i * 3 + 1], attrib.normals[i * 3 + 2]));
-	}
-	for (index i = 0; i < facevertcount; i++) {
-		auto facevert = shapes[0].mesh.indices[i];
-		x[facevert.vertex_index].Normal = normals[facevert.normal_index];
-	}
-	return x;
-}
-*/
 void FindDimensions(span<Vertex> vertices)
 {
 	Vector3 lower = Vector3(numeric_limits<float>::infinity());
@@ -115,6 +78,27 @@ float Sample(Vector3 p)
 	float dist = p.Length() - 0.5;
 	return dist / GlobalScale;
 }
+
+float TrueDistanceAt(Vector3 p, vector<Vertex *> vertices)
+{
+	p = Transform(p);
+	Vertex *closest = nullptr;
+	float minDistance = numeric_limits<float>::infinity();
+
+	for (Vertex *&v : vertices) {
+		if (Vector3::DistanceSquared(v->Position, p) < minDistance) {
+			minDistance = Vector3::DistanceSquared(v->Position, p);
+			closest = v;
+		}
+	}
+
+	if (minDistance == numeric_limits<float>::infinity() || closest == nullptr)
+		throw range_error("Did not find ");
+	if (isinf(minDistance) || isnan(minDistance))
+		throw range_error("NaN distance, Oh noes.");
+
+	return sqrt(minDistance) / GlobalScale;
+}
 float DistanceAt(Vector3 p, vector<Vertex *> vertices)
 {
 	p = Transform(p);
@@ -136,9 +120,13 @@ float DistanceAt(Vector3 p, vector<Vertex *> vertices)
 		throw range_error("NaN distance, Oh noes.");
 
 	minDistance = (float) sqrt(minDistance);
-
-	if (Inside(p, *closest))
+	if (minDistance < 0.02)
+		minDistance = Vector3::Dot(closest->Normal / closest->Normal.Length(), p - closest->Position);
+	else if (Inside(p, *closest))
 		minDistance *= -1;
+
+	//if (Inside(p, *closest))
+		//minDistance *= -1;
 
 	return minDistance / GlobalScale;
 }
@@ -146,9 +134,9 @@ float DistanceAt(Vector3 p, vector<Vertex *> vertices)
 vector<Vertex *> GetPossible(Vector3 pos, float minDistance, const vector<Vertex *> &possible)
 {
 	pos = Transform(pos);
+	vector<Vertex *> next;
 	minDistance *= GlobalScale;
 	minDistance *= minDistance;
-	vector<Vertex *> next;
 	for(Vertex *v : possible) {
 		if (Vector3::DistanceSquared(v->Position, pos) < minDistance)
 			next.push_back(v);
@@ -159,24 +147,22 @@ void construct(const vector<Vertex *> &vertices, int depth, Vector3 pos, int par
 {
 	float scale = powf(0.5, static_cast<float>(depth));
 	Vector3 center = pos + Vector3(1) * 0.5f * scale;
-	float centerValue = DistanceAt(center, vertices);
-	vector<Vertex *> possible = GetPossible(center, abs(centerValue) + HalfSqrt3 * scale, vertices);
-	OctS current(pos, scale, parent);
+	float centerValue = TrueDistanceAt(center, vertices);
+	vector<Vertex *> possible = GetPossible(center, centerValue + HalfSqrt3 * scale, vertices);
+	OctS current(parent);
 
 	for (index i = 0; i < 8; i++) {
 		if (vals[insert][i] == INFINITY)
 			vals[insert][i] = DistanceAt(pos + Vector3::split(i) * scale, possible);
-		if (vals[insert][i] < 0)
-			current.Empty = false;
 	}
 
-	if (abs(centerValue) < scale * 2 && depth < MaxDepth) { // split condition
+	if (centerValue < scale * 2 && depth < MaxDepth) { // split condition
 		current.Children = octs.size();
 		for (index i = 0; i < 8; i++) {
 			octs.push_back(OctS());
 			OctVerts n = EmptyVerts();
 			n[i] = vals[insert][i];
-			n[7-i] = centerValue;
+			//n[7-i] = centerValue;
 			vals.push_back(n);
 		}
 		for (index i = 0; i < 8; i++) {
@@ -190,6 +176,17 @@ uint8_t FromFloat(float f, float scale)
 {
 	float normd = f / 4 / scale;
 	return static_cast<uint8_t>(saturate(normd + 0.25f) * 255);
+}
+void WriteBytes(uint8_t *dest, int p = 0, float scale = 1)
+{
+	for (index j = 0; j < 8; j++) {
+		dest[p * 8 + j] = FromFloat(vals[p][j], scale);
+	}
+	if (octs[p].Children != -1) {
+		for (index i = 0; i < 8; i++) {
+			WriteBytes(dest, octs[p].Children + i, scale / 2);
+		}
+	}
 }
 
 extern "C" {
@@ -228,11 +225,7 @@ extern "C" {
 		copy(make_span(octs), make_span(resultoct, length));
 
 		uint8_t *resultvals = new uint8_t[length * 8];
-		for (index i = 0; i < length; i++) {
-			for (index j = 0; j < 8; j++) {
-				resultvals[i * 8 + j] = FromFloat(vals[i][j], octs[i].Scale);
-			}
-		}
+		WriteBytes(resultvals);
 
 		return OctData { length, resultoct, resultvals };
 	}

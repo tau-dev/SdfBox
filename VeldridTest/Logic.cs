@@ -17,7 +17,7 @@ namespace SDFbox
         public const int xSize = 720;
         public const int ySize = 720;
         public static bool mouseDown = false;
-        public const int GroupSize = 25;
+        public const int GroupSize = 12;
         public static bool debugGizmos = false;
         public static bool debugWindow = true;
         public static string loadPath = "";

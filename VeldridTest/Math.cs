@@ -29,8 +29,12 @@ namespace SDFbox
         public static double Average(float[] values)
         {
             double total = 0;
+            int Length = 0;
             foreach (float v in values) {
-                total += v;
+                if (v != 0) {
+                    total += v;
+                    Length++;
+                }
             }
             return total / values.Length;
         }

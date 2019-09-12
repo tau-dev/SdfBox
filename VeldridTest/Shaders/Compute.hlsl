@@ -1,30 +1,13 @@
 
 #pragma warning( disable: 3571  )
 
-#define groupSizeX 24
-#define groupSizeY 24
+#define groupSize 12
 #define subdiv 2
 #define textureWidth 2048
-//16384
 
-struct Cube
-{
-    float3 lower;
-    float scale;
-    
-    float3 higher()
-    {
-        return lower + scale;
-    }
-    bool inside(float3 pos)
-    {
-        return all(lower <= pos) && all(pos <= higher());
-    }
-};
-
-SamplerState samp : register(s0);
 
 Texture2D values : register(t0);
+SamplerState samp : register(s0);
 
 static uint index = 0;
 static float2 dimensions;
@@ -38,33 +21,50 @@ float sample_at(float3 d, float scale)
     float2 p = int2((index * 4) % textureWidth, index * 4 / textureWidth * 2);
     float2 pl = (d.xy + p);
     float2 ph = (d.xy + p + float2(2, 0));
-    /*float2 pa = float2(1, 0) / dimensions; //(d.xy + p + float2(2, 0)) / dimensions;
-    float sampa = values.SampleLevel(samp, pa, 0);*/
+
     float loadL = sam(d.xy + p);
     float loadH = sam(d.xy + p + float2(2, 0));
-    return (lerp(loadL, loadH, d.z) - .25) * scale * 4;
+    float result = (lerp(loadL, loadH, d.z) - .25) * scale * 4;
+    return result - .2 * result * result;
 }
+
+struct Cube
+{
+    float3 lower;
+    float scale;
+    
+    void scale_up()
+    {
+        scale *= 2;
+        lower = floor(lower / scale) * scale;
+    }
+    void scale_down(int3 p)
+    {
+        scale /= 2;
+        lower += p * scale;
+    }
+    float3 higher()
+    {
+        return lower + scale;
+    }
+    bool inside(float3 pos)
+    {
+        return all(lower <= pos) && all(pos <= higher());
+    }
+    float interpol_world(float3 pos)
+    {
+        float3 d = saturate((pos - lower) / scale); //smoothstep(lower, higher, pos);//
+        return sample_at(d, scale);
+    }
+};
+
+static Cube box;
+
 
 struct Oct
 {
-    Cube box;
-
     int parent;
-	int empty;
     int children;
-    /*
-    float interpol_inside(float3 d)
-    {
-        float2 cO = lerp(vertsL.xz, vertsL.yw, d.x);
-        float2 cI = lerp(vertsH.xz, vertsH.yw, d.x);
-        return lerp(lerp(cO.x, cO.y, d.y),
-			lerp(cI.x, cI.y, d.y), d.z);
-    }*/
-	float interpol_world(float3 pos)
-	{
-		float3 d = saturate((pos - box.lower) / box.scale); //smoothstep(lower, higher, pos);//
-		return sample_at(d, box.scale);
-	}
 };
 
 struct Info
@@ -90,15 +90,18 @@ Oct find(float3 pos)
 	int iterations = 0;
     Oct c = data[index];
     
-    while (!c.box.inside(pos) && c.parent >= 0) {
+    while (!box.inside(pos) && c.parent >= 0) {
         index = c.parent;
         c = data[index];
+        box.scale_up();
     }
     while (index < inf.buffer_size && iterations < 12 && c.children >= 0)
     {
-        int p = dot((int3) (saturate((pos - c.box.lower) / c.box.scale) * subdiv), int3(1, subdiv, subdiv * subdiv));
+        int3 dir = (int3) saturate((pos - box.lower) / box.scale * subdiv);
+        int p = dot(dir, int3(1, subdiv, subdiv * subdiv));
         index = c.children + p;
         c = data[index];
+        box.scale_down(dir);
         iterations++;
     }
 	return c;
@@ -106,9 +109,9 @@ Oct find(float3 pos)
 
 
 
-float3 gradient(float3 pos, Oct frame)
+float3 gradient(float3 pos)
 {
-    float3 d = saturate((pos - frame.box.lower) / frame.box.scale);
+    float3 d = saturate((pos - box.lower) / box.scale);
     float2 p = int2((index * 4) % textureWidth, index * 4 / textureWidth * 2);
     float2 ph = p + float2(2, 0);
 
@@ -129,8 +132,8 @@ float3 gradient(float3 pos, Oct frame)
 float2 box_intersect(Oct c, float3 pos, float3 dir)
 {
     float3 inv_dir = 1 / dir;
-    float3 t1 = (c.box.lower - pos) * inv_dir;
-    float3 t2 = (c.box.higher() - pos) * inv_dir;
+    float3 t1 = (box.lower - pos) * inv_dir;
+    float3 t2 = (box.higher() - pos) * inv_dir;
 
     return float2(max(max(
 		min(t1.x, t2.x),
@@ -159,7 +162,7 @@ void set(float4 value, uint2 coord)
 
 
 
-[numthreads(groupSizeX, groupSizeY, 1)]
+[numthreads(groupSize, groupSize, 1)]
 void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 {
     float3 pos = inf.position;
@@ -168,41 +171,26 @@ void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 
 
     float3 dir = ray(coord.xy);
 	float prox = 1;
-    int pointer;
-    Oct current = find(pos);
-	// remove multiplications?
+    box.lower = float3(0, 0, 0);
+    box.scale = 1;
+
 	int i;
 	for (i = 0; prox > inf.margin; i++) {
-		if (i >= 100 || dot(pos, pos) > inf.limit) { // || abs(prox) < inf.margin
+		if (i >= 100 || dot(pos, pos) > inf.limit) {
 			set(float4(0.05, 0.1, 0.4, i), coord);
 			return;
 		}
-		current = find(pos); //data[0];//find(pos);
-        /*
-		if (current.empty == 0) {
-			float2 res = box_intersect(current, pos, dir);
-			if (res.x < res.y) {
-				float3 a = pos + dir * res.x;
-				float3 b = pos + dir * res.y;
-				float vala = current.interpol_world(a);
-				float valb = current.interpol_world(b);
-				if (vala <= 0 || valb <= 0) {
-					pos = lerp(a, b, vala / (vala - valb));
-					break;
-				}
-			}
-		}*/
-		
-        prox = current.interpol_world(pos);
+		find(pos);
+        prox = box.interpol_world(pos);
 		pos += dir * (prox) * (1 + inf.margin);
     }
 
-	prox = current.interpol_world(pos);
+    prox = box.interpol_world(pos);
 	pos += dir * (prox - inf.margin);
 
 	dir = normalize(inf.light - pos);
 	pos += dir * inf.margin;
-	float angle = dot(dir, normalize(gradient(pos, current)));
+	float angle = dot(dir, normalize(gradient(pos)));
 	if (angle < 0) {
 		set(float4(0, 0, 0, i), coord);
 		return;
@@ -215,11 +203,8 @@ void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 
 			set(float4(attenuation, attenuation, attenuation, i+j), coord);
 			return;
 		}
-		current = find(pos);
-		if (current.empty == 0) {
-			pos = pos + dir * box_intersect(current, pos, dir).y;
-		}
-		prox = current.interpol_world(pos);
+		find(pos);
+        prox = box.interpol_world(pos);
 		pos += dir * (prox + inf.margin);
 	}
 	set(float4(0, 0, 0, 140), coord);

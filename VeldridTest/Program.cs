@@ -145,8 +145,8 @@ namespace SDFbox
             var infoUBuffer = MakeBuffer(new Info[] { Logic.State }, BufferUsage.UniformBuffer);
 
             var compDesc = new ComputeUnit.Description(LoadShader("Compute", ShaderStages.Compute)) {
-                xGroupSize = 24,
-                yGroupSize = 24
+                xGroupSize = Logic.GroupSize,
+                yGroupSize = Logic.GroupSize
             };
 
             compDesc.AddResource("sampler", ResourceKind.Sampler, device.LinearSampler);
@@ -344,97 +344,17 @@ namespace SDFbox
             Color = color;
         }
     }
-
-    ///*
-    [StructLayout(LayoutKind.Sequential, Pack = 16)]
-    [Serializable]
-    struct OctS
+    [StructLayout(LayoutKind.Sequential)]
+    struct OctLean
     {
-        public Vector3 lower;
-        public float scale;
-
         public int Parent;
-        public int empty;
-        public int children;
-        //public Int8 children;
-        //*/
-        /*
-        public OctS(int Parent, Int8 children, Vector8 verts, Vector3 lower, Vector3 higher) {
-            this.Parent = Parent;
-            this.lower = lower;
-            this.higher = higher;
+        public int Children;
 
-            this.children = children;
-
-            this.verts = verts;
-
-            empty = 1;
-            if (vertsL.X <= 0 || vertsL.X <= 0 || vertsL.W <= 0 || vertsL.Z <= 0)
-                empty = 0;
-            if (vertsH.X <= 0 || vertsH.X <= 0 || vertsH.W <= 0 || vertsH.Z <= 0)
-                empty = 0;
-        }//*/
-        public Vector3 higher {
-            get {
-                return lower + Vector3.One * scale;
-            }
-        }
-        public OctS(int Parent, int children, float[] verts, Vector3 lower, float scale)
+        public OctLean(int parent, int children)
         {
-            this.Parent = Parent;
-            this.lower = lower;
-            this.scale = scale;
-
-            this.children = children;
-
-            empty = 1;
-            foreach (float x in verts) {
-                if (x <= 0)
-                    empty = 0;
-            }
+            Parent = parent;
+            Children = children;
         }
-        /*
-        public static void Serialize(OctS[] octs, BinaryWriter writer)
-        {
-            foreach (OctS current in octs) {
-                writer.Write(current.Parent);
-                writer.Write(current.empty);
-                writer.Write(current.children);
-                current.verts.Serialize(writer);
-            }
-        }
-
-        public static OctS[] Deserialize(BinaryReader reader)
-        {
-            List<OctS> read = new List<OctS>();
-            while (reader.BaseStream.Position != reader.BaseStream.Length) {
-                read.Add(new OctS() {
-                    Parent = reader.ReadInt32(),
-                    empty = reader.ReadInt32(),
-                    children = reader.ReadInt32(),
-                    verts = Half8.Deserialize(reader)
-                });
-            }
-            Rectify(0, Vector3.Zero, 1);
-
-            return read.ToArray();
-
-            void Rectify(int p, Vector3 lower, float scale)
-            {
-                OctS current = read[p];
-                current.lower = lower;
-                current.scale = scale;
-                read[p] = current;
-                if (current.children == -1)
-                    return;
-
-                scale /= 2;
-                for (int i = 0; i < 8; i++) {
-                    Rectify(current.children + i, lower + SdfMath.split(i).Vector * scale, scale);
-                }
-            }
-        }
-        */
     }
 
 
@@ -590,7 +510,7 @@ namespace SDFbox
 
     class OctData
     {
-        public OctS[] Structs;
+        public OctLean[] Structs;
         public byte[] Values;
         public int Length {
             get {
@@ -599,9 +519,14 @@ namespace SDFbox
         }
         const int MaxTextureDim = 2048;//16384;
 
-        public OctData(OctS[] frames, Byte8[] values)
+        public OctData(OctLean[] frames, Byte8[] values)
         {
             Structs = frames;
+            /*
+            Structs = new OctLean[frames.Length];
+            for (int i = 0; i < frames.Length; i++) {
+                Structs[i] = new OctLean() { children = frames[i].children, Parent = frames[i].Parent };
+            }*/
             Values = new byte[RoundToNextRow(values.Length * 4)*2];
 
             for (int i = 0; i < values.Length; i++) {
@@ -623,11 +548,6 @@ namespace SDFbox
             {
                 return (x + MaxTextureDim - 1) / MaxTextureDim * MaxTextureDim;
             }
-        }
-        public OctData(List<OctS> frames, List<byte> values)
-        {
-            Structs = frames.ToArray();
-            Values = values.ToArray();
         }
         public OctData(NativeOctData raw) : this(raw.ManagedStructs(), raw.ManagedValues())
         {
@@ -681,19 +601,19 @@ namespace SDFbox
             const string SdfGenPath = "../../../Release/SdfGen.dll";
 #endif
 
-            public OctS[] ManagedStructs()
+            public OctLean[] ManagedStructs()
             {
-                var s = new OctS[Length];
+                var s = new OctLean[Length];
                 for (int i = 0; i < Length; i++) {
                     IntPtr sptr = new IntPtr(Structs.ToInt64() + i * PackedSize());
-                    s[i] = Marshal.PtrToStructure<OctS>(sptr);
+                    s[i] = Marshal.PtrToStructure<OctLean>(sptr);
                 }
                 return s;
 
                 int PackedSize()
                 {
-                    int pack = typeof(OctS).StructLayoutAttribute.Pack;
-                    return (Marshal.SizeOf(typeof(OctS)) + pack - 1) / pack * pack;
+                    int pack = typeof(OctLean).StructLayoutAttribute.Pack;
+                    return (Marshal.SizeOf(typeof(OctLean)) + pack - 1) / pack * pack;
                 }
             }
             public Byte8[] ManagedValues()
