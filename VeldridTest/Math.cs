@@ -36,7 +36,7 @@ namespace SDFbox
                     Length++;
                 }
             }
-            return total / values.Length;
+            return total / Length;
         }
         public static float Saturate(float f)
         {

@@ -22,16 +22,16 @@ namespace SDFbox
         public static bool debugWindow = true;
         public static string loadPath = "";
         public static ImGuiConsole console = new ImGuiConsole(80, 64);
-        public static float[] frames = new float[96];
+        public static float[] frames = new float[1];
         public static int desiredFrameCount = 96;
 
-        const float mSpeed = 0.2f;
+        static float mSpeed = 0.5f;
         const float tSpeed = 0.1f;
         public static Info State = new Info() {
             position = new Vector3(0.5f, 0.5f, 0.1f),
             light = new Vector3(0f, 0f, 0f),
-            strength = .5f,
-            margin = .001f,
+            strength = .2f,
+            margin = .0004f,
             screen_size = new Vector2(xSize, ySize),
             fov = 1
         };
@@ -91,16 +91,13 @@ namespace SDFbox
             string basename = Path.ChangeExtension(filename, null);
             FileFormat format = FormatOf(filename);
 
-            if (format == FileFormat.ASDF) {
+            if (format == FileFormat.ASDF)
                 Debug.WriteLine("Loading from " + filename);
-                throw new NotImplementedException();
-
-            } else if (MustImport(format)) {
-                var raw = OctData.NativeOctData.Generate(filename, format);
-                data = new OctData(raw);
-                OctData.NativeOctData.Free(raw);
-            } else
-                throw new ArgumentException("Invalid " + Path.GetExtension(filename) + "; can only read .obj or .asdf files.");
+            var raw = OctData.NativeOctData.Generate(filename, format);
+            data = new OctData(raw);
+            OctData.NativeOctData.Free(raw);
+            //else
+            //    throw new ArgumentException("Invalid " + Path.GetExtension(filename) + "; can only read .obj or .asdf files.");
 
             State.buffer_size = (uint) data.Length;
             return data;
@@ -201,7 +198,10 @@ namespace SDFbox
             window.KeyDown += KeyDown;
             window.KeyUp += KeyUp;
             window.DragDrop += DragDrop;
-
+            window.MouseWheel += (MouseWheelEventArgs e) => {
+                if (e.WheelDelta > 0 && mSpeed < 1 || e.WheelDelta < 0 && mSpeed > 0.05)
+                    mSpeed += e.WheelDelta * 0.05f;
+            };
             window.MouseMove += (MouseMoveEventArgs mouseEvent) => {
                 if (mouseEvent.State.IsButtonDown(0) && !ImGui.GetIO().WantCaptureMouse) {
                     window.SetMousePosition(Program.window.Width / 2, Program.window.Height / 2);
@@ -244,8 +244,9 @@ namespace SDFbox
                 frames[i] = frames[i-1];
             }
             frames[0] = sec;
-            float transform = mSpeed * sec;
+            float transform = mSpeed * mSpeed * sec;
             float rotate = tSpeed * sec;
+            
             if (pressed[Key.Right])
                 Heading += new Vector2(0, rotate);
             if (pressed[Key.Left])
@@ -322,8 +323,9 @@ namespace SDFbox
                 ImGui.SliderFloat("Light X", ref State.light.X, -1, 2);
                 ImGui.SliderFloat("Light Y", ref State.light.Y, -1, 2);
                 ImGui.SliderFloat("Light Z", ref State.light.Z, -1, 2);
-                ImGui.SliderFloat("Light Intensity", ref State.strength, 0, 4);
+                ImGui.SliderFloat("Light Intensity", ref State.strength, 0, 1f);
                 ImGui.SliderFloat("FOV", ref State.fov, 0.05f, 1.5f);
+                ImGui.SliderFloat("Movement speed", ref mSpeed, 0.05f, 1f);
 
                 bool submitted = ImGui.InputText("Load File", ref loadPath, 128, ImGuiInputTextFlags.EnterReturnsTrue);
                 string complete = AutocompleteFile(loadPath.Replace('/', '\\'));
@@ -341,7 +343,10 @@ namespace SDFbox
                 if (debugGizmos) {
                     ImGui.PlotLines("", ref frames[0], frames.Length, 0, $"{time} FPS - {nanoPerPixel} nspp", 0, 0.1f, new Vector2(200, 40));
                     ImGui.DragInt("averaging time", ref desiredFrameCount, 1, 1, 96);
-                    console.Render();
+                    if (ImGui.Button("Reload shader"))
+                        Program.ReloadShader();
+                    if (Program.DebugMode)
+                        console.Render();
                 } else
                     ImGui.Text($"{time} FPS - {milliPerFrame} mspf - {nanoPerPixel} nspp");
             }

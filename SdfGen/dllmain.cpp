@@ -35,7 +35,7 @@ OctVerts EmptyVerts()
 
 struct OctData
 {
-	int32_t Length;
+	uint32_t Length;
 	owner<OctS *> Structs;
 	owner<uint8_t *> Values;
 };
@@ -86,8 +86,8 @@ float TrueDistanceAt(Vector3 p, vector<Vertex *> vertices)
 	float minDistance = numeric_limits<float>::infinity();
 
 	for (Vertex *&v : vertices) {
-		if (Vector3::DistanceSquared(v->Position, p) < minDistance) {
-			minDistance = Vector3::DistanceSquared(v->Position, p);
+		if ((v->Position - p).LengthSquared() < minDistance) {
+			minDistance = (v->Position - p).LengthSquared();
 			closest = v;
 		}
 	}
@@ -106,8 +106,8 @@ float DistanceAt(Vector3 p, vector<Vertex *> vertices)
 	float minDistance = numeric_limits<float>::infinity();
 
 	for (Vertex *&v : vertices) {
-		if (Vector3::DistanceSquared(v->Position, p) < minDistance) {
-			minDistance = Vector3::DistanceSquared(v->Position, p);
+		if ((v->Position - p).LengthSquared() < minDistance) {
+			minDistance = (v->Position - p).LengthSquared();
 			closest = v;
 		}
 		/*if ((v->Position.x - closest->Position.x) * (v->Position.x - closest->Position.x) > minDistance)
@@ -138,7 +138,7 @@ vector<Vertex *> GetPossible(Vector3 pos, float minDistance, const vector<Vertex
 	minDistance *= GlobalScale;
 	minDistance *= minDistance;
 	for(Vertex *v : possible) {
-		if (Vector3::DistanceSquared(v->Position, pos) < minDistance)
+		if ((v->Position - pos).LengthSquared() < minDistance)
 			next.push_back(v);
 	}
 	return next;
@@ -175,7 +175,7 @@ void construct(const vector<Vertex *> &vertices, int depth, Vector3 pos, int par
 uint8_t FromFloat(float f, float scale)
 {
 	float normd = f / 4 / scale;
-	return static_cast<uint8_t>(saturate(normd + 0.25f) * 255);
+	return static_cast<uint8_t>(floor(saturate(normd + 0.25f) * 255));
 }
 void WriteBytes(uint8_t *dest, int p = 0, float scale = 1)
 {
@@ -204,6 +204,54 @@ extern "C" {
 	}
 
 	__declspec(dllexport)
+	OctData __stdcall LoadAsdf(char *name)
+	{
+		ifstream file(name, ios::binary);
+		CheckError(!file.is_open(), "Could not open file.");
+
+		uint8_t m1, m2, m3, m4;
+		uint16_t v;
+		file.seekg(0);
+		file >> m1; file >> m2; file >> m3; file >> m4;// file >> v;
+		CheckError(
+			!(m1 == 'a' && m2 == 's' && m3 == 'd' && m4 == 'f'), 
+			"Not a supported ASDF file.");
+
+		OctData result;
+		uint32_t length = 42;
+		CheckError(file.bad(), "BAD FILE");
+		file.read(reinterpret_cast<char *>(&(length)), 4);
+		CheckError(file.bad(), "BAD FILE 2");
+		CheckError(!file.is_open(), "BAD FILE 3");
+		result.Length = length;
+
+		result.Structs = new OctS[result.Length];
+		result.Values = new uint8_t[result.Length * 8];
+
+		file.read(reinterpret_cast<char *>(result.Structs), result.Length * sizeof(OctS));
+		file.read(reinterpret_cast<char *>(result.Values), result.Length * 8);
+		file.close();
+		return result;
+	}
+
+	__declspec(dllexport)
+	void __stdcall Save(OctData data, char *name)
+	{
+		ofstream file(name, ios::binary | ios::out);
+		CheckError(!file.is_open(), "Could not open file for saving.");
+
+		file << "asdf";
+		uint16_t version = 0;
+		//file.write(reinterpret_cast<char *>(&version), 2);
+
+		file.write(reinterpret_cast<char *>(&data.Length), 4);
+		file.write(reinterpret_cast<char *>(data.Structs), data.Length * sizeof(OctS));
+		file.write(reinterpret_cast<char *>(data.Values), data.Length * 8);
+		file.close();
+	}
+
+
+	__declspec(dllexport)
 	OctData __stdcall SdfGen(span<Vertex> *vertices, int32_t depth) // (Vertex *raw_vertices, int32_t vertexcount, int32_t depth)
 	{
 		MaxDepth = depth;
@@ -213,21 +261,23 @@ extern "C" {
 		for (auto &vert : *vertices) {
 			all.push_back(&vert);
 		}
-
 		vals.push_back(EmptyVerts());
 		octs.push_back(OctS());
 		construct(all, 0, 0, -1, 0);
 		delete[] vertices->data();
 		delete vertices;
 
-		int length = octs.size();
-		OctS *resultoct = new OctS[length];
-		copy(make_span(octs), make_span(resultoct, length));
+		OctData result;
+		result.Length = octs.size();
+		result.Structs = new OctS[result.Length];
+		copy(make_span(octs), make_span(result.Structs, result.Length));
 
-		uint8_t *resultvals = new uint8_t[length * 8];
-		WriteBytes(resultvals);
+		result.Values = new uint8_t[result.Length * 8];
+		WriteBytes(result.Values);
+		octs.clear();
+		vals.clear();
 
-		return OctData { length, resultoct, resultvals };
+		return result;
 	}
 
 	__declspec(dllexport)

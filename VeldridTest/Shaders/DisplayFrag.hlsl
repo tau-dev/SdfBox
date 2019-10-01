@@ -17,8 +17,9 @@ float4 FS(FragmentIn input) : SV_Target0
 {
 	uint2 dimensions;
 	image.GetDimensions(dimensions.x,dimensions.y);
-	float4 val = image.Sample(imageSampler, input.Position.xy/dimensions);
+    float4 val = image.Sample(imageSampler, input.Position.xy / dimensions);
 	if(debug)
-		val += float4(1, -1, -1, 0) * val.w / 140;
-	return val;
+		return float4(1, 1, 1, 0) * val.w / 140;
+    else
+        return pow(val, 1 / 2.2);
 }

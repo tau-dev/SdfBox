@@ -100,7 +100,7 @@ namespace SDFbox
 
     class ComputeUnit : RenderUnit
     {
-        public Shader Shader { get; }
+        public Shader Shader { get; set; }
         public uint xGroupSize { get; }
         public uint yGroupSize { get; }
         public uint zGroupSize { get; }

@@ -7,14 +7,6 @@ using namespace gsl;
 
 const string invalid_message = "File format is unsupported or invalid.";
 
-inline void CheckError(bool fail, string message)
-{
-	if (fail) {
-		cout << message << endl;
-		throw runtime_error(message);
-	}
-}
-
 bool SystemBigEndian(void)
 {
 	union { uint32_t i; char c[4]; } test = { 0x01020304 };

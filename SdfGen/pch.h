@@ -17,4 +17,12 @@
 
 #include "framework.h"
 
+inline void CheckError(bool fail, std::string message)
+{
+	if (fail) {
+		std::cout << message << std::endl;
+		throw std::runtime_error(message);
+	}
+}
+
 #endif //PCH_H

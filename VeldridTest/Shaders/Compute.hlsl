@@ -3,7 +3,8 @@
 
 #define groupSize 12
 #define subdiv 2
-#define textureWidth 2048
+#define textureWidth 8192
+//2048
 
 
 Texture2D values : register(t0);
@@ -25,7 +26,7 @@ float sample_at(float3 d, float scale)
     float loadL = sam(d.xy + p);
     float loadH = sam(d.xy + p + float2(2, 0));
     float result = (lerp(loadL, loadH, d.z) - .25) * scale * 4;
-    return result - .2 * result * result;
+    return result;// - .2 * result * result;
 }
 
 struct Cube
@@ -147,7 +148,7 @@ float2 box_intersect(Oct c, float3 pos, float3 dir)
 
 float3 ray(uint2 coord)
 {
-	float2 screendir = (float2)coord / inf.screen_size.y - float2( inf.screen_size.x / inf.screen_size.y * .5, .5);
+	float2 screendir = (float2)coord / inf.screen_size.y - float2(inf.screen_size.x / inf.screen_size.y * .5, .5);
 	float3 dir = mul(float3(screendir * inf.fov, .5), inf.heading);
 	return normalize(dir);
 }
@@ -171,22 +172,23 @@ void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 
 
     float3 dir = ray(coord.xy);
 	float prox = 1;
+    //float step = 1;
     box.lower = float3(0, 0, 0);
     box.scale = 1;
 
 	int i;
-	for (i = 0; prox > inf.margin; i++) {
-		if (i >= 100 || dot(pos, pos) > inf.limit) {
-			set(float4(0.05, 0.1, 0.4, i), coord);
+	for (i = 0; (prox > inf.margin * 2 || prox < 0) && i < 100; i++) {
+		if (dot(pos, pos) > inf.limit) {
+            float3 c = float3(0.005, 0.01, 0.2);
+			set(float4(c, i), coord);
 			return;
 		}
 		find(pos);
+        //float lastprox = prox;
         prox = box.interpol_world(pos);
-		pos += dir * (prox) * (1 + inf.margin);
+        //step = ((prox < .02) ? prox * abs((prox - lastprox) / step) : prox) * (1+inf.margin);
+        pos += dir * prox;// * (1 - inf.margin);
     }
-
-    prox = box.interpol_world(pos);
-	pos += dir * (prox - inf.margin);
 
 	dir = normalize(inf.light - pos);
 	pos += dir * inf.margin;
@@ -196,17 +198,22 @@ void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 
 		return;
 	}
 	float dist = length(inf.light - pos) / 2;
-
-	for (int j = 0; j < 40 && prox > -inf.margin; j++) {
+    int j;
+	for (j = 0; j < 40 && prox > -inf.margin; j++) {
 		if (prox > dist || any(pos < 0) || any(pos > 1)) {
-			float attenuation = angle / (dist*dist*4) * (exp2(inf.strength)- 1);
+			float attenuation = angle / (dist*dist) * (exp2(inf.strength) - 1);
 			set(float4(attenuation, attenuation, attenuation, i+j), coord);
 			return;
 		}
+        
+        if (prox < inf.margin)
+            if (dot(gradient(pos), dir) < 0)
+                break;
+        
 		find(pos);
         prox = box.interpol_world(pos);
 		pos += dir * (prox + inf.margin);
 	}
-	set(float4(0, 0, 0, 140), coord);
+	set(float4(0, 0, 0, i+j), coord);
 	return;
 }

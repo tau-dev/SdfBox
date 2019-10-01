@@ -1,4 +1,4 @@
-﻿//#define USE_DEBUG_GENERATOR
+﻿#define USE_DEBUG_GENERATOR
 
 using ImGuiNET;
 using System;
@@ -325,6 +325,11 @@ namespace SDFbox
         {
             return (uint) (val + blocksize - val % blocksize);
         }
+
+        public static void ReloadShader()
+        {
+            compute.Shader = LoadShader("Compute", ShaderStages.Compute);
+        }
     }
 
 
@@ -517,16 +522,11 @@ namespace SDFbox
                 return Structs.Length;
             }
         }
-        const int MaxTextureDim = 2048;//16384;
+        const int MaxTextureDim = 8192;//2048;//16384;
 
         public OctData(OctLean[] frames, Byte8[] values)
         {
             Structs = frames;
-            /*
-            Structs = new OctLean[frames.Length];
-            for (int i = 0; i < frames.Length; i++) {
-                Structs[i] = new OctLean() { children = frames[i].children, Parent = frames[i].Parent };
-            }*/
             Values = new byte[RoundToNextRow(values.Length * 4)*2];
 
             for (int i = 0; i < values.Length; i++) {
@@ -551,7 +551,6 @@ namespace SDFbox
         }
         public OctData(NativeOctData raw) : this(raw.ManagedStructs(), raw.ManagedValues())
         {
-
         }
 
         public Texture ValueTexture() {
@@ -589,7 +588,7 @@ namespace SDFbox
         {
             throw new NotImplementedException();
         }
-
+        
         public struct NativeOctData
         {
             public uint Length;
@@ -604,24 +603,21 @@ namespace SDFbox
             public OctLean[] ManagedStructs()
             {
                 var s = new OctLean[Length];
+                IntPtr sptr = Structs;
                 for (int i = 0; i < Length; i++) {
-                    IntPtr sptr = new IntPtr(Structs.ToInt64() + i * PackedSize());
                     s[i] = Marshal.PtrToStructure<OctLean>(sptr);
+                    sptr += 8;
                 }
                 return s;
-
-                int PackedSize()
-                {
-                    int pack = typeof(OctLean).StructLayoutAttribute.Pack;
-                    return (Marshal.SizeOf(typeof(OctLean)) + pack - 1) / pack * pack;
-                }
             }
             public Byte8[] ManagedValues()
             {
                 var v = new Byte8[Length];
+
+                IntPtr bptr = Values;
                 for (int i = 0; i < Length; i++) {
-                    IntPtr bptr = new IntPtr(Values.ToInt64() + i * 8);
                     v[i] = Marshal.PtrToStructure<Byte8>(bptr);
+                    bptr += 8;
                 }
                 return v;
             }
@@ -631,25 +627,31 @@ namespace SDFbox
                 Debug.WriteLine("Generating from " + path + ".");
                 Debug.Write("Loading data...  ");
                 var start = DateTime.Now;
-                IntPtr vertices;
-                switch (type) {
-                    case FileFormat.Stanford:
-                        vertices  = LoadPly(path);
-                        break;
-                    case FileFormat.Wavefront:
-                        vertices = LoadObj(path);
-                        break;
-                    case FileFormat.ASDF:
-                    default:
-                        throw new NotImplementedException();
-                }
-                
-                Time(start);
+                NativeOctData nod;
 
-                Debug.Write("Building ASDF... ");
-                start = DateTime.Now;
-                var nod = SdfGen(vertices, Model.MaxDepth);
-                Time(start);
+                if (type == FileFormat.ASDF)
+                    nod = LoadAsdf(path);
+                else {
+                    IntPtr vertices;
+                    if (type == FileFormat.Stanford)
+                        vertices = LoadPly(path);
+                    else if (type == FileFormat.Wavefront)
+                        vertices = LoadObj(path);
+                    else
+                        throw new NotImplementedException();
+
+                    Time(start);
+
+                    Debug.Write("Building ASDF... ");
+                    start = DateTime.Now;
+                    nod = SdfGen(vertices, Model.MaxDepth);
+                    Time(start);
+
+                    string saveto = Path.ChangeExtension(path, ".asdf");
+                    if (File.Exists(saveto))
+                        File.Delete(saveto);
+                    Save(nod, saveto);
+                }
 
                 return nod;
 
@@ -663,6 +665,11 @@ namespace SDFbox
             private static extern IntPtr LoadObj([MarshalAs(UnmanagedType.LPStr)] string path);
             [DllImport(SdfGenPath)]
             private static extern IntPtr LoadPly([MarshalAs(UnmanagedType.LPStr)] string path);
+            [DllImport(SdfGenPath)]
+            private static extern NativeOctData LoadAsdf([MarshalAs(UnmanagedType.LPStr)] string path);
+
+            [DllImport(SdfGenPath)]
+            private static extern void Save(NativeOctData data, [MarshalAs(UnmanagedType.LPStr)] string path);
             [DllImport(SdfGenPath)]
             private static extern NativeOctData SdfGen(IntPtr data, int depth);
 

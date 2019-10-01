@@ -26,10 +26,15 @@ struct Vector3
 		z = Z;
 	}
 
-	float Length();
-
+	inline float LengthSquared()
+	{
+		return  x*x + y*y + z*z;
+	}
+	inline float Length()
+	{
+		return sqrt(LengthSquared());
+	}
 	static float Dot(Vector3 a, Vector3 b);
-	static float DistanceSquared(Vector3 a, Vector3 b);
 	static Vector3 ElementMin(Vector3 a, Vector3 b);
 	static Vector3 ElementMax(Vector3 a, Vector3 b);
 	static Vector3 split(int i)

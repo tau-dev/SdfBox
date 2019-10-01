@@ -48,7 +48,6 @@ span<Vertex> *ObjParser::Parse(string filename)
 	if (!file.is_open()) {
 		cout << "Could not open file." << endl;
 		throw runtime_error("file");
-
 	}
 
 	int line = 1;
