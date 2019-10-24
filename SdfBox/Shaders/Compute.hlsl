@@ -25,7 +25,7 @@ float sample_at(float3 d, float scale)
 
     float loadL = sam(d.xy + p);
     float loadH = sam(d.xy + p + float2(2, 0));
-    float result = (lerp(loadL, loadH, d.z) - .25) * scale * 4;
+    float result = (lerp(loadL, loadH, d.z) - .25) * scale * 2;
     return result;// - .2 * result * result;
 }
 
@@ -88,7 +88,7 @@ cbuffer B : register(b0)
 }
 Oct find(float3 pos)
 {
-	int iterations = 0;
+    int iterations = 0;
     Oct c = data[index];
     
     while (!box.inside(pos) && c.parent >= 0) {
@@ -105,7 +105,7 @@ Oct find(float3 pos)
         box.scale_down(dir);
         iterations++;
     }
-	return c;
+    return c;
 }
 
 
@@ -129,6 +129,21 @@ float3 gradient(float3 pos)
 
     return float3(xh-xl, yh-yl, zh-zl);
 }
+/*
+float3 gradient(float3 pos)
+{
+    float2 d = float2(box.scale * 0.5, 0);
+    find(pos);
+    float c = box.interpol_world(pos);
+    find(pos + d.xyy);
+    float dx = box.interpol_world(pos + d.xyy);
+    find(pos + d.yxy);
+    float dy = box.interpol_world(pos + d.yxy);
+    find(pos + d.yyx);
+    float dz = box.interpol_world(pos + d.yyx);
+    return float3(dx - c, dy - c, dz - c);
+}
+*/
 
 float2 box_intersect(Oct c, float3 pos, float3 dir)
 {
@@ -154,11 +169,11 @@ float3 ray(uint2 coord)
 }
 
 
-RWTexture2D<float4> tex : register(u0);
+RWTexture2D<float4> target : register(u0);
 
 void set(float4 value, uint2 coord)
 {
-	tex[coord.xy] = value;//pow(value, 1 / 2.2);
+	target[coord.xy] = value;//pow(value, 1 / 2.2);
 }
 
 
@@ -166,6 +181,7 @@ void set(float4 value, uint2 coord)
 [numthreads(groupSize, groupSize, 1)]
 void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 {
+    walk[0] = 0;
     float3 pos = inf.position;
     values.GetDimensions(dimensions.x, dimensions.y);
     dimensions = 1 / dimensions;
@@ -184,9 +200,7 @@ void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 
 			return;
 		}
 		find(pos);
-        //float lastprox = prox;
         prox = box.interpol_world(pos);
-        //step = ((prox < .02) ? prox * abs((prox - lastprox) / step) : prox) * (1+inf.margin);
         pos += dir * prox;// * (1 - inf.margin);
     }
 

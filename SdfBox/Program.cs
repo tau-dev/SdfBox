@@ -1,4 +1,4 @@
-﻿#define USE_DEBUG_GENERATOR
+﻿//#define USE_DEBUG_GENERATOR
 
 using ImGuiNET;
 using System;

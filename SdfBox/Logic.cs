@@ -33,7 +33,8 @@ namespace SDFbox
             strength = .2f,
             margin = .0004f,
             screen_size = new Vector2(xSize, ySize),
-            fov = 1
+            fov = 1,
+            hidef = 0
         };
         public static DrawInfo DrawState {
             get {
@@ -415,6 +416,7 @@ namespace SDFbox
         public Vector3 light;
         public float strength;
         public float fov;
+        public int hidef;
     }
     [StructLayout(LayoutKind.Sequential, Pack = 16, Size = 16)]
     struct DrawInfo

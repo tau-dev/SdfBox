@@ -259,14 +259,15 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
-/VeldridTest/Shaders/compile-hlsl - Kopie.txt
-/VeldridTest/Shaders/Fragment.hlsl.bytes
-/VeldridTest/Shaders/Fragment.metallib
+/SdfBox/Shaders/compile-hlsl - Kopie.txt
+/SdfBox/Shaders/Fragment.hlsl.bytes
+/SdfBox/Shaders/Fragment.metallib
 /UnitTests
 /stanford_dragon
-/VeldridTest/model.mtl
-/VeldridTest/dragonB.mtl
-/VeldridTest/models
+/SdfBox/model.mtl
+/SdfBox/dragonB.mtl
+/SdfBox/models
 /Performance Measurements
-/VeldridTest/imgui.ini
-/VeldridTest/RenderDoc Config.cap
+/SdfBox/imgui.ini
+/SdfBox/RenderDoc Config.cap
+*.bytes

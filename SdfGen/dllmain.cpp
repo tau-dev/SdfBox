@@ -174,7 +174,7 @@ void construct(const vector<Vertex *> &vertices, int depth, Vector3 pos, int par
 
 uint8_t FromFloat(float f, float scale)
 {
-	float normd = f / 4 / scale;
+	float normd = f / 2 / scale;
 	return static_cast<uint8_t>(floor(saturate(normd + 0.25f) * 255));
 }
 void WriteBytes(uint8_t *dest, int p = 0, float scale = 1)

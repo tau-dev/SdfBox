@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.28803.202
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SdfBox", "VeldridTest\SdfBox.csproj", "{CCD4BA2D-29CC-4BA4-A500-D37BE82AA03A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SdfBox", "SdfBox\SdfBox.csproj", "{CCD4BA2D-29CC-4BA4-A500-D37BE82AA03A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Converter", "Converter\Converter.csproj", "{27F45AED-91FA-4034-B9D4-DD4B51866C45}"
 EndProject
