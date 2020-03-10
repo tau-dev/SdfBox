@@ -93,7 +93,7 @@ namespace SDFbox
             FileFormat format = FormatOf(filename);
 
             if (format == FileFormat.ASDF)
-                Debug.WriteLine("Loading from " + filename);
+                Trace.WriteLine("Loading from " + filename);
             var raw = OctData.NativeOctData.Generate(filename, format);
             data = new OctData(raw);
             OctData.NativeOctData.Free(raw);

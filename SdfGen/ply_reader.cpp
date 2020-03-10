@@ -14,7 +14,7 @@ bool SystemBigEndian(void)
 }
 void SwapEndianness(Vertex &x)
 {
-	CheckError(true, "NoT ImPleMenTeD");
+	CheckError(true, "Not implemented");
 }
 void SwapEndianness(span<Vertex> buffer)
 {

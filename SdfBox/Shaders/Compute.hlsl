@@ -4,7 +4,6 @@
 #define groupSize 12
 #define subdiv 2
 #define textureWidth 8192
-//2048
 
 
 Texture2D values : register(t0);
@@ -173,7 +172,7 @@ RWTexture2D<float4> target : register(u0);
 
 void set(float4 value, uint2 coord)
 {
-	target[coord.xy] = value;//pow(value, 1 / 2.2);
+	target[coord.xy] = value;
 }
 
 
@@ -181,7 +180,6 @@ void set(float4 value, uint2 coord)
 [numthreads(groupSize, groupSize, 1)]
 void main(uint2 coord : SV_DispatchThreadID)//uint3 groupID : SV_GroupID, uint3 threadID : SV_GroupThreadID)
 {
-    walk[0] = 0;
     float3 pos = inf.position;
     values.GetDimensions(dimensions.x, dimensions.y);
     dimensions = 1 / dimensions;

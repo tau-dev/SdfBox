@@ -12,12 +12,6 @@ using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using System.Threading.Tasks;
 
-/* TODO
- * Modeling
- * Moar lights
- * Moar speed
- */
-
 namespace SDFbox
 {
     class Program
@@ -44,7 +38,8 @@ namespace SDFbox
         static void Main(string[] args)
         {
             Console.SetOut(Logic.console);
-            Debug.Listeners.Add(new TextWriterTraceListener(Logic.console));
+            Trace.Listeners.Add(new TextWriterTraceListener(Logic.console));
+            
             model = Logic.MakeData(args[0]);
 
             window = Utilities.MakeWindow(720, 720);
@@ -226,14 +221,6 @@ namespace SDFbox
         }
         static Sampler MakeSampler()
         {
-            /*
-            SamplerDescription desc = new SamplerDescription() {
-                AddressModeU = SamplerAddressMode.Wrap,
-                AddressModeV = SamplerAddressMode.Wrap,
-                AddressModeW = SamplerAddressMode.Wrap,
-                Filter = SamplerFilter.MinLinear_MagLinear_MipLinear,
-                
-            };*/
             return factory.CreateSampler(SamplerDescription.Linear);
         }
         public static Shader LoadShader(string name, ShaderStages stage, params string[] include)
@@ -598,6 +585,7 @@ namespace SDFbox
             const string SdfGenPath = "../../../Debug/SdfGen.dll";
 #else
             const string SdfGenPath = "../../../Release/SdfGen.dll";
+            //const string SdfGenPath = "SdfGen.dll";
 #endif
 
             public OctLean[] ManagedStructs()
@@ -624,8 +612,8 @@ namespace SDFbox
 
             public static NativeOctData Generate(string path, FileFormat type)
             {
-                Debug.WriteLine("Generating from " + path + ".");
-                Debug.Write("Loading data...  ");
+                Trace.WriteLine("Generating from " + path + ".");
+                Trace.Write("Loading data...  ");
                 var start = DateTime.Now;
                 NativeOctData nod;
 
@@ -640,12 +628,12 @@ namespace SDFbox
                     else
                         throw new NotImplementedException();
 
-                    Time(start);
+                    LogTimeSince(start);
 
-                    Debug.Write("Building ASDF... ");
+                    Trace.Write("Building ASDF... ");
                     start = DateTime.Now;
                     nod = SdfGen(vertices, Model.MaxDepth);
-                    Time(start);
+                    LogTimeSince(start);
 
                     string saveto = Path.ChangeExtension(path, ".asdf");
                     if (File.Exists(saveto))
@@ -655,9 +643,9 @@ namespace SDFbox
 
                 return nod;
 
-                void Time(DateTime begin)
+                void LogTimeSince(DateTime begin)
                 {
-                    Debug.WriteLine((DateTime.Now - begin).TotalSeconds.ToString("F3") + " s");
+                    Trace.WriteLine((DateTime.Now - begin).TotalSeconds.ToString("F3") + " s");
                 }
             }
 

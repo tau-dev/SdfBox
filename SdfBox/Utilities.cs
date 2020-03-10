@@ -13,7 +13,7 @@ namespace SDFbox
         public static Sdl2Window MakeWindow(int width, int height)
         {
             Sdl2Window window = VeldridStartup.CreateWindow(
-                new WindowCreateInfo(512, 32, width, height, WindowState.Minimized, "SDFbox"));
+                new WindowCreateInfo(512, 512, width, height, WindowState.Minimized, "SDFbox"));
             //window.CursorVisible = false;
             return window;
         }

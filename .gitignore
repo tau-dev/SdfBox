@@ -271,3 +271,4 @@ __pycache__/
 /SdfBox/imgui.ini
 /SdfBox/RenderDoc Config.cap
 *.bytes
+*.asdf

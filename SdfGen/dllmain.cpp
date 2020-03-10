@@ -39,9 +39,26 @@ struct OctData
 	owner<OctS *> Structs;
 	owner<uint8_t *> Values;
 };
+OctData make(uint32_t length)
+{
+	return OctData { length, new OctS[length], new uint8_t[length * 8] };
+}
+struct OctTexture
+{
+	uint32_t StructsLength;
+	uint32_t TextureWidth;
+	uint32_t TextureHeight;
+	owner<OctS *> Structs;
+	owner<uint8_t *> Texture;
+};
+OctTexture make_tex(uint32_t s_length, uint32_t tex_width, uint32_t tex_height)
+{
+	return OctTexture { s_length, tex_width, tex_height, new OctS[s_length], new uint8_t[tex_width * tex_height] };
+}
 
 float GlobalScale;
 Vector3 GlobalOffset = Vector3(0);
+int maxTexDim = 8192;
 vector<OctS> octs;
 vector<OctVerts> vals;
 
@@ -75,7 +92,7 @@ bool Inside(Vector3 p, Vertex closest)
 float Sample(Vector3 p)
 {
 	p = Transform(p);
-	float dist = p.Length() - 0.5;
+	float dist = p.Length() - 0.5f;
 	return dist / GlobalScale;
 }
 
@@ -120,7 +137,7 @@ float DistanceAt(Vector3 p, vector<Vertex *> vertices)
 		throw range_error("NaN distance, Oh noes.");
 
 	minDistance = (float) sqrt(minDistance);
-	if (minDistance < 0.02)
+	if (minDistance < 0.015)
 		minDistance = Vector3::Dot(closest->Normal / closest->Normal.Length(), p - closest->Position);
 	else if (Inside(p, *closest))
 		minDistance *= -1;
@@ -188,6 +205,33 @@ void WriteBytes(uint8_t *dest, int p = 0, float scale = 1)
 		}
 	}
 }
+void WriteTexture(uint8_t *dest, int i = 0, float s = 1)
+{
+	OctVerts v = vals[i];
+	int p = ((i * 4) % maxTexDim) + 2 * maxTexDim * ((i * 4) / maxTexDim);
+
+	dest[p] = FromFloat(v[0], s);
+	dest[p + 1] = FromFloat(v[1], s);
+	dest[p + 2] = FromFloat(v[4], s);
+	dest[p + 3] = FromFloat(v[5], s);
+
+	p += maxTexDim;
+	dest[p] = FromFloat(v[2], s);
+	dest[p + 1] = FromFloat(v[3], s);
+	dest[p + 2] = FromFloat(v[6], s);
+	dest[p + 3] = FromFloat(v[7], s);
+
+	if (octs[i].Children != -1) {
+		for (index j = 0; j < 8; j++) {
+			WriteBytes(dest, octs[i].Children + j, s / 2);
+		}
+	}
+}
+int RoundRow(int x)
+{
+	return (x + maxTexDim - 1) / maxTexDim;
+}
+
 
 extern "C" {
 	__declspec(dllexport)
@@ -217,17 +261,14 @@ extern "C" {
 			!(m1 == 'a' && m2 == 's' && m3 == 'd' && m4 == 'f'), 
 			"Not a supported ASDF file.");
 
-		OctData result;
 		uint32_t length = 42;
 		CheckError(file.bad(), "BAD FILE");
 		file.read(reinterpret_cast<char *>(&(length)), 4);
 		CheckError(file.bad(), "BAD FILE 2");
 		CheckError(!file.is_open(), "BAD FILE 3");
-		result.Length = length;
 
-		result.Structs = new OctS[result.Length];
-		result.Values = new uint8_t[result.Length * 8];
-
+		OctData result = make(length);
+		
 		file.read(reinterpret_cast<char *>(result.Structs), result.Length * sizeof(OctS));
 		file.read(reinterpret_cast<char *>(result.Values), result.Length * 8);
 		file.close();
@@ -267,24 +308,52 @@ extern "C" {
 		delete[] vertices->data();
 		delete vertices;
 
-		OctData result;
-		result.Length = octs.size();
-		result.Structs = new OctS[result.Length];
+		OctData result = make(octs.size());
 		copy(make_span(octs), make_span(result.Structs, result.Length));
 
-		result.Values = new uint8_t[result.Length * 8];
 		WriteBytes(result.Values);
 		octs.clear();
 		vals.clear();
 
 		return result;
 	}
+	__declspec(dllexport)
+	OctTexture __stdcall SdfTex(span<Vertex> *vertices, int32_t depth) // (Vertex *raw_vertices, int32_t vertexcount, int32_t depth)
+	{
+		MaxDepth = depth;
+		FindDimensions(*vertices);
 
+		vector<Vertex *> all;
+		for (auto &vert : *vertices) {
+			all.push_back(&vert);
+		}
+		vals.push_back(EmptyVerts());
+		octs.push_back(OctS());
+		construct(all, 0, 0, -1, 0);
+		delete[] vertices->data();
+		delete vertices;
+
+		OctTexture result = make_tex(octs.size(), maxTexDim, RoundRow(vals.size() * 4) * 2);
+
+		copy(make_span(octs), make_span(result.Structs, result.StructsLength));
+
+		WriteBytes(result.Texture);
+		octs.clear();
+		vals.clear();
+
+		return result;
+	}
 	__declspec(dllexport)
 	void __stdcall Free(OctData x)
 	{
 		delete[] x.Structs;
 		delete[] x.Values;
+	}
+	__declspec(dllexport)
+		void __stdcall FreeTex(OctTexture x)
+	{
+		delete[] x.Structs;
+		delete[] x.Texture;
 	}
 }
 
