@@ -15,7 +15,7 @@ namespace SDFbox
         //SaveModel save;
         const float HalfSqrt3 = 0.866025404f;
         public static float precision = 0.002f;
-        public static int MaxDepth = 6;
+        public static int MaxDepth = 10;
         //public static float maxResolution = 0.004f;
 
         public Model(Octree c)

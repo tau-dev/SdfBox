@@ -14,6 +14,7 @@
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
     <IsWebBootstrapper>false</IsWebBootstrapper>
+    <TargetFrameworkProfile />
     <PublishUrl>publish\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Unc</InstallFrom>
@@ -31,7 +32,6 @@
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
     <BootstrapperEnabled>true</BootstrapperEnabled>
-    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -71,12 +71,15 @@
     <GenerateManifests>false</GenerateManifests>
   </PropertyGroup>
   <PropertyGroup>
-    <SignManifests>true</SignManifests>
+    <SignManifests>false</SignManifests>
   </PropertyGroup>
   <PropertyGroup>
     <TargetZone>LocalIntranet</TargetZone>
   </PropertyGroup>
   <PropertyGroup />
+  <PropertyGroup>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="CjClutter.ObjLoader.Loader, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" />
     <Reference Include="HlslUnit, Version=0.2.0.0, Culture=neutral, processorArchitecture=MSIL">
@@ -279,6 +282,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <None Include="app.manifest" />
     <None Include="models\bunny.obj" />
     <None Include="models\bunnyNew.obj" />
     <None Include="models\dragon.obj" />
@@ -309,7 +313,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\..\..\.nuget\packages\veldrid.sdl2\4.5.0\runtimes\win-x64\native\SDL2.dll">
+    <Content Include="..\packages\Veldrid.SDL2.4.6.1\runtimes\win-x64\native\SDL2.dll">
       <Link>SDL2.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -338,16 +342,6 @@
     <None Include="Shaders\DisplayFrag.hlsl">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Converter\Converter.csproj">
-      <Project>{27f45aed-91fa-4034-b9d4-dd4b51866c45}</Project>
-      <Name>Converter</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\HalfPrecisionFloat\HalfPrecisionFloat.csproj">
-      <Project>{95ad9450-834d-4a84-81f8-e56469cc4704}</Project>
-      <Name>HalfPrecisionFloat</Name>
-    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.7.1">
